@@ -1,11 +1,7 @@
-//! Tantivy indexer (P0 stub).
-/// P0 stub. Do not call.
-pub fn index_placeholder() {}
+//! Tantivy index builder for CBETA line units.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder_smoke() {
-        super::index_placeholder();
-    }
-}
+#![deny(missing_docs)]
+
+mod tokenizer;
+
+pub use tokenizer::{tokenize_all, CjkNgramTokenizer, CJK_TOKENIZER_NAME};
