@@ -10,4 +10,4 @@ mod query;
 mod types;
 
 pub use query::{parse_query, ParseError, ParsedQuery};
-pub use types::{Action, Command, Filters, Format, Hit};
+pub use types::{Action, CatalogEntry, Command, Filters, Format, Hit, IndexInfo};
