@@ -138,28 +138,63 @@ fn search_fullwidth_exits_2() {
 
 #[test]
 fn catalog_json_dumps_command() {
-    // Scaffold dump only until catalog product wire.
-    let out = cbeta()
+    // Product: catalog --json after mini build → array of CatalogEntry.
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("cat-json");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
         .args(["--json", "catalog"])
         .output()
-        .expect("spawn --json catalog");
-    assert_eq!(out.status.code(), Some(0));
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Catalog);
+        .expect("catalog");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    let arr = v.as_array().expect("catalog array");
+    assert!(arr.len() >= 2, "expected works; got {arr:?}");
+    assert!(arr.iter().any(|e| e["work_id"] == "T1578"));
 }
 
 #[test]
 fn info_json_dumps_command() {
-    // Scaffold dump only until info product wire.
-    let out = cbeta()
+    // Product: info --json after mini build → IndexInfo.
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("info-json");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
         .args(["--json", "info"])
         .output()
-        .expect("spawn --json info");
-    assert_eq!(out.status.code(), Some(0));
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Info);
+        .expect("info");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let info: cbeta_core::IndexInfo = serde_json::from_slice(&out.stdout).expect("IndexInfo");
+    assert_eq!(info.artifact_id, "2026R2+c1f1x7a0");
+    assert_eq!(info.scope, "ci-minimal");
 }
 
 #[test]
