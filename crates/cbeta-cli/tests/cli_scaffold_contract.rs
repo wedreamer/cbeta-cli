@@ -262,13 +262,7 @@ fn author_type_flags_json() {
     // Then: filters.authors and filters.types carry the flag values
     let out = cbeta()
         .args([
-            "search",
-            "--json",
-            "--author",
-            "玄奘",
-            "--type",
-            "lun",
-            "空性",
+            "search", "--json", "--author", "玄奘", "--type", "lun", "空性",
         ])
         .output()
         .expect("spawn search --json --author --type");

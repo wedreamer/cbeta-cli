@@ -60,6 +60,8 @@ pub struct Filters {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub types: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub titles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub juans: Vec<u32>,
 }
 
