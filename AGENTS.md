@@ -33,6 +33,10 @@ Crate graph: only `cbeta-cli` → `cbeta-core` is wired. Parse/index/search are 
 - Workspace deps only in root `[workspace.dependencies]`; members use `.workspace = true`.
 - `thiserror` is a declared dep for library errors, but `ParseError` in cbeta-core is hand-rolled today. Do not migrate it in this PR.
 
+## GIT SIGNING
+
+Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account as a **Signing key** (Settings → SSH and GPG keys). An authentication key does not count until it is also added as a signing key. Never `--no-gpg-sign`.
+
 ## TESTS (dual-tier + inline)
 
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
