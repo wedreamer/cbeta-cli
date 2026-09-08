@@ -2,7 +2,11 @@ use cbeta_core::{parse_query, Action, Command, Filters, Format};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "cbeta", version, about = "离线查 CBETA 经论（人用 CLI；MCP 是 cbeta serve）")]
+#[command(
+    name = "cbeta",
+    version,
+    about = "离线查 CBETA 经论（人用 CLI；MCP 是 cbeta serve）"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmds>,
@@ -91,7 +95,10 @@ fn main() {
         if json {
             println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
         } else if let Some(p) = &cmd.parsed_query {
-            println!("mode={} terms={:?} within={:?}", p.mode, p.terms, p.within_chars);
+            println!(
+                "mode={} terms={:?} within={:?}",
+                p.mode, p.terms, p.within_chars
+            );
         }
         return;
     }
