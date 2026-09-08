@@ -75,7 +75,7 @@ TTY 默认人可读：高亮、`line_id`、经名、作译者。管道默认 JSO
 | fuzzy | 1–2 字误差 / 异体 |
 | verify | 是否原文；不是则返近句 |
 
-Agent 请用结构化 `clauses`，不要拼 CBReader DSL。语义搜索是独立工具，不参与「是不是原文」。
+Agent 请用结构化 `clauses`（未来的 agent API：当前 `Command` 只有字符串 `q`，走 `parse_query`，`clauses` 字段尚未实现），不要拼 CBReader DSL。语义搜索是独立工具，不参与「是不是原文」。
 
 详见 [docs/search-modes.md](docs/search-modes.md)、[docs/human-ux.md](docs/human-ux.md)。
 
@@ -89,7 +89,7 @@ Agent 请用结构化 `clauses`，不要拼 CBReader DSL。语义搜索是独立
 产物 ID：`{cbeta_tag}+{scope_hash}`，例 `2026R2+a3f91c2e`。改 scope 必须重建索引。
 
 ```text
-crates/cbeta-core     Command / Hit / Passage
+crates/cbeta-core     Command / Hit / Filters
 crates/cbeta-parse    TEI P5
 crates/cbeta-index    Tantivy
 crates/cbeta-search   keyword / near / verify

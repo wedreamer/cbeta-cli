@@ -29,7 +29,7 @@ CBReader default proximity is 30 characters; agents should pass `distance` expli
 
 Do not ship regex-over-corpus in v1. Semantic search is a later extra tool, never mixed into verify.
 
-## Structured near (preferred for agents)
+## Structured near (future agent API; today `Command` carries only the string `q` parsed by `parse_query`)
 
 ```json
 {
@@ -38,13 +38,13 @@ Do not ship regex-over-corpus in v1. Semantic search is a later extra tool, neve
     {"text": "空性"},
     {"text": "缘生", "within_chars": 16, "ordered": false}
   ],
-  "filters": {"canons": ["T"], "work_types": ["lun"]},
+  "filters": {"canons": ["T"], "types": ["lun"]},
   "window": "paragraph",
   "limit": 20
 }
 ```
 
-`window`: `paragraph` (default, agent-friendly) | `gatha` | `juan` (CBReader-compatible, coarser).
+`filters.types` matches the current `Filters.types` field name. `window`: `paragraph` (default, agent-friendly) | `gatha` | `juan` (CBReader-compatible, coarser). None of `clauses` / `window` / `limit` exist on `Command` today.
 
 ## String DSL (humans + CBReader aliases)
 
@@ -66,7 +66,7 @@ Accepted CBReader aliases (parser only; do not document these as the agent API):
 佛陀-佛陀曰        # EXCLUDE
 ```
 
-Fullwidth ＋＊＆，？ are rejected with a clear error asking for halfwidth.
+Fullwidth `—` `＋` `＊` `＆` `？` are rejected with a clear error asking for halfwidth (`，` is not rejected; only the five operators above are).
 
 ## Engine notes
 
