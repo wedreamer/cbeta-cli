@@ -71,6 +71,7 @@ fn main() {
         Some(Cmds::Serve) => (Action::Serve, None, false, false, None),
     };
 
+    // WHY: global parse_query on any `q` is a scaffold bug (AGENTS.md KNOWN SCAFFOLD BUG) — do not treat as product.
     let parsed = match q.as_deref() {
         Some(raw) => match parse_query(raw) {
             Ok(p) => Some(p),
@@ -92,6 +93,8 @@ fn main() {
     };
 
     if json || explain {
+        // Command is our own Serialize types; serde_json pretty-print cannot fail here.
+        #[allow(clippy::expect_used)]
         if json {
             println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
         } else if let Some(p) = &cmd.parsed_query {
