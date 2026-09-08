@@ -158,7 +158,7 @@ fn build_json_dumps_command() {
 
 #[test]
 fn verify_json_dumps_command() {
-    // Scaffold dump only: parent --json precedes verify; do NOT assert parsed_query (scaffold bug).
+    // Scaffold dump only: parent --json precedes verify.
     let out = cbeta()
         .args(["--json", "verify", "色即是空"])
         .output()
@@ -172,7 +172,7 @@ fn verify_json_dumps_command() {
 
 #[test]
 fn get_json_dumps_command() {
-    // Scaffold dump only: parent --json precedes get; do NOT assert parsed_query (scaffold bug).
+    // Scaffold dump only: parent --json precedes get.
     let out = cbeta()
         .args(["--json", "get", "T31n1585_p0001a12"])
         .output()
@@ -182,4 +182,109 @@ fn get_json_dumps_command() {
     let cmd: cbeta_core::Command =
         serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
     assert_eq!(cmd.action, cbeta_core::Action::Get);
+}
+
+#[test]
+fn get_json_has_no_parsed_query() {
+    // Given: get by line_id with --json
+    // When: CLI dumps Command
+    // Then: action=Get and parsed_query is absent (not run through parse_query)
+    let out = cbeta()
+        .args(["--json", "get", "T31n1585_p0001a12"])
+        .output()
+        .expect("spawn --json get");
+    assert_eq!(out.status.code(), Some(0));
+
+    let cmd: cbeta_core::Command =
+        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
+    assert_eq!(cmd.action, cbeta_core::Action::Get);
+    assert!(
+        cmd.parsed_query.is_none(),
+        "get must not run parse_query; got {:?}",
+        cmd.parsed_query
+    );
+
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
+    let obj = value.as_object().expect("JSON object");
+    assert!(
+        !obj.contains_key("parsed_query"),
+        "parsed_query must be skipped when None; keys={:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn verify_json_has_no_parsed_query() {
+    // Given: verify pasted text with --json
+    // When: CLI dumps Command
+    // Then: action=Verify and parsed_query is absent
+    let out = cbeta()
+        .args(["--json", "verify", "色即是空"])
+        .output()
+        .expect("spawn --json verify");
+    assert_eq!(out.status.code(), Some(0));
+
+    let cmd: cbeta_core::Command =
+        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
+    assert_eq!(cmd.action, cbeta_core::Action::Verify);
+    assert!(
+        cmd.parsed_query.is_none(),
+        "verify must not run parse_query; got {:?}",
+        cmd.parsed_query
+    );
+}
+
+#[test]
+fn build_json_has_no_parsed_query() {
+    // Given: build --scope with --json
+    // When: CLI dumps Command
+    // Then: action=Build and parsed_query is absent (scope is not a search query)
+    let out = cbeta()
+        .args(["--json", "build", "--scope", "taisho"])
+        .output()
+        .expect("spawn --json build --scope");
+    assert_eq!(out.status.code(), Some(0));
+
+    let cmd: cbeta_core::Command =
+        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
+    assert_eq!(cmd.action, cbeta_core::Action::Build);
+    assert!(
+        cmd.parsed_query.is_none(),
+        "build scope must not run parse_query; got {:?}",
+        cmd.parsed_query
+    );
+}
+
+#[test]
+fn author_type_flags_json() {
+    // Given: search with --author / --type filters
+    // When: --json dumps Command
+    // Then: filters.authors and filters.types carry the flag values
+    let out = cbeta()
+        .args([
+            "search",
+            "--json",
+            "--author",
+            "玄奘",
+            "--type",
+            "lun",
+            "空性",
+        ])
+        .output()
+        .expect("spawn search --json --author --type");
+    assert_eq!(out.status.code(), Some(0));
+
+    let cmd: cbeta_core::Command =
+        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
+    assert_eq!(cmd.action, cbeta_core::Action::Search);
+    assert!(
+        cmd.filters.authors.iter().any(|a| a == "玄奘"),
+        "expected filters.authors to contain 玄奘, got {:?}",
+        cmd.filters.authors
+    );
+    assert!(
+        cmd.filters.types.iter().any(|t| t == "lun"),
+        "expected filters.types to contain lun, got {:?}",
+        cmd.filters.types
+    );
 }
