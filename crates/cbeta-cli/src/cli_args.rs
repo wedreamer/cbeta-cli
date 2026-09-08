@@ -159,3 +159,88 @@ pub fn format_of(json: bool, plain: bool) -> Format {
         Format::Tty
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_cli() -> Cli {
+        Cli {
+            command: None,
+            query: None,
+            json: false,
+            explain: false,
+            plain: false,
+            canon: None,
+            authors: vec![],
+            types: vec![],
+            works: vec![],
+            titles: vec![],
+        }
+    }
+
+    #[test]
+    fn format_of_json_plain_tty_precedence() {
+        assert_eq!(format_of(true, true), Format::Json);
+        assert_eq!(format_of(false, true), Format::Plain);
+        assert_eq!(format_of(false, false), Format::Tty);
+    }
+
+    #[test]
+    fn resolve_bare_query_is_search() {
+        let mut cli = base_cli();
+        cli.query = Some("空".into());
+        cli.canon = Some("T".into());
+        cli.authors = vec!["玄奘".into()];
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Search);
+        assert_eq!(out.q.as_deref(), Some("空"));
+        assert_eq!(out.filters.canons, vec!["T".to_string()]);
+        assert_eq!(out.filters.authors, vec!["玄奘".to_string()]);
+    }
+
+    #[test]
+    fn resolve_all_subcommands() {
+        let cases: Vec<(Cmds, Action, Option<&str>)> = vec![
+            (Cmds::Search { q: Some("q".into()) }, Action::Search, Some("q")),
+            (Cmds::Verify { text: "t".into() }, Action::Verify, Some("t")),
+            (Cmds::Get { line_id: "L".into() }, Action::Get, Some("L")),
+            (Cmds::Catalog, Action::Catalog, None),
+            (Cmds::Info, Action::Info, None),
+            (Cmds::Build { scope: Some("s".into()) }, Action::Build, Some("s")),
+            (Cmds::Serve, Action::Serve, None),
+        ];
+        for (cmd, action, q) in cases {
+            let mut cli = base_cli();
+            cli.command = Some(cmd);
+            cli.json = true;
+            let out = resolve(cli);
+            assert_eq!(out.action, action);
+            assert_eq!(out.q.as_deref(), q);
+        }
+    }
+
+    #[test]
+    fn resolve_catalog_keeps_filter_flags() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Catalog);
+        cli.works = vec!["T1578".into()];
+        cli.types = vec!["lun".into()];
+        cli.titles = vec!["掌珍".into()];
+        let out = resolve(cli);
+        assert_eq!(out.filters.works, vec!["T1578".to_string()]);
+        assert_eq!(out.filters.types, vec!["lun".to_string()]);
+        assert_eq!(out.filters.titles, vec!["掌珍".to_string()]);
+    }
+
+    #[test]
+    fn resolve_get_clears_explain() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Get {
+            line_id: "x".into(),
+        });
+        cli.explain = true;
+        let out = resolve(cli);
+        assert!(!out.explain);
+    }
+}

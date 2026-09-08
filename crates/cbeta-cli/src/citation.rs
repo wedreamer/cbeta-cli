@@ -34,3 +34,50 @@ fn display_tag(tag: &str) -> String {
     }
     tag.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbeta_parse::ParsedLine;
+
+    fn line(id: &str) -> ParsedLine {
+        ParsedLine {
+            line_id: id.into(),
+            work_id: "T1578".into(),
+            juan: 1,
+            text_raw: "x".into(),
+            lb_n: "0268b21".into(),
+        }
+    }
+
+    #[test]
+    fn format_citation_parses_standard_line_id() {
+        // Given: T30n1578_p0268b21
+        // When: format_citation
+        // Then: human CBETA citation with dotted tag and stripped page zeros
+        let c = format_citation("2026R2", &line("T30n1578_p0268b21"));
+        assert_eq!(c, "(CBETA 2026.R2, T30, no. 1578, p. 268, b21)");
+    }
+
+    #[test]
+    fn format_citation_falls_back_on_bad_line_id() {
+        // Given: line_id without `_p` / volume `n`
+        // When: format
+        // Then: bare fallback keeps the raw id
+        let c = format_citation("2026R2", &line("not-a-line-id"));
+        assert_eq!(c, "(CBETA 2026.R2, not-a-line-id)");
+        let c2 = format_citation("2026R2", &line("Tn1578_p0268b21"));
+        // still has _p but n at index 1 with empty work — still structured if parseable
+        assert!(c2.contains("CBETA"));
+        let c3 = format_citation("2026R2", &line("T30n1578_p0268"));
+        // no alphabetic col → fallback
+        assert_eq!(c3, "(CBETA 2026.R2, T30n1578_p0268)");
+    }
+
+    #[test]
+    fn display_tag_inserts_dot_before_r_or_passthrough() {
+        assert_eq!(display_tag("2026R2"), "2026.R2");
+        assert_eq!(display_tag("R2"), "R2"); // R at 0
+        assert_eq!(display_tag("2026"), "2026"); // no R
+    }
+}
