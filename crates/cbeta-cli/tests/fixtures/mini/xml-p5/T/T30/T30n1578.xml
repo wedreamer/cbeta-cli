@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:cb="http://www.cbeta.org/ns/1.0" xml:id="T30n1578">
+  <teiHeader>
+    <fileDesc>
+      <titleStmt><title>攝大乘論</title></titleStmt>
+      <lb n="0000a01"/>header-noise-must-not-emit
+    </fileDesc>
+  </teiHeader>
+  <text>
+    <body>
+      <cb:juan n="1" fun="open"/>
+      <lb n="0268b21"/><app><lem>真性有為空</lem><rdg>真性有为空</rdg></app>
+      <lb n="0268b22"/>緣生故如幻
+    </body>
+  </text>
+</TEI>
