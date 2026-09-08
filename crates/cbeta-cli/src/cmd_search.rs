@@ -87,23 +87,23 @@ fn highlight(text: &str, terms: &[String], color: bool) -> String {
     if !color || terms.is_empty() {
         return text.to_string();
     }
-    // Best-effort: wrap first occurrence of each term (raw may be 繁; terms may be 简).
-    let mut out = text.to_string();
+    // Display is 繁體; user terms may be 简体 — try s2t so the snippet actually lights up.
     for t in terms {
         if t.is_empty() {
             continue;
         }
-        // Try term as-is; also try if already present.
-        if let Some(pos) = out.find(t.as_str()) {
-            let end = pos + t.len();
-            out = format!(
-                "{}\x1b[1;31m{}\x1b[0m{}",
-                &out[..pos],
-                &out[pos..end],
-                &out[end..]
-            );
-            break;
+        let trad = cbeta_parse::s2t(t);
+        for needle in [t.as_str(), trad.as_str()] {
+            if let Some(pos) = text.find(needle) {
+                let end = pos + needle.len();
+                return format!(
+                    "{}\x1b[1;31m{}\x1b[0m{}",
+                    &text[..pos],
+                    &text[pos..end],
+                    &text[end..]
+                );
+            }
         }
     }
-    out
+    text.to_string()
 }
