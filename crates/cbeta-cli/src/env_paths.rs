@@ -1,7 +1,7 @@
 //! Resolve CBETA_CORPUS / CBETA_INDEX roots for the binary.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Default corpus cache under `$HOME` when `CBETA_CORPUS` is unset.
 const DEFAULT_CORPUS_REL: &str = ".cbeta/corpus/2026R2";
@@ -17,6 +17,16 @@ pub fn corpus_root() -> Result<PathBuf, String> {
         "HOME unset and CBETA_CORPUS not set; export CBETA_CORPUS or HOME".to_string()
     })?;
     Ok(PathBuf::from(home).join(DEFAULT_CORPUS_REL))
+}
+
+/// TEI XML root: fixture layout `xml-p5/` or fetch.sh cache `src/xml-p5/`.
+pub fn xml_p5_root(corpus: &Path) -> PathBuf {
+    let top = corpus.join("xml-p5");
+    if top.is_dir() {
+        top
+    } else {
+        corpus.join("src").join("xml-p5")
+    }
 }
 
 /// Re-export index root from cbeta-index for a single binary entry point.

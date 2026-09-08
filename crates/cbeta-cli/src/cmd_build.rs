@@ -9,7 +9,7 @@ use cbeta_index::{artifact_id, write_artifact, IndexableLine};
 use cbeta_parse::{parse_tei_lines, GaijiMap};
 
 use crate::citation::format_citation;
-use crate::env_paths::{corpus_root, index_root};
+use crate::env_paths::{corpus_root, index_root, xml_p5_root};
 use crate::scope_io::{read_catalog, read_files_list, read_json, CatalogRow, ScopeManifest};
 
 /// Canons never indexed by default (Category B).
@@ -85,7 +85,14 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
     let by_path: std::collections::HashMap<&str, &CatalogRow> =
         catalog.iter().map(|r| (r.path.as_str(), r)).collect();
 
-    let xml_root = corpus.join("xml-p5");
+    let xml_root = xml_p5_root(&corpus);
+    if !xml_root.is_dir() {
+        return Err(format!(
+            "xml-p5 not found at {} or {}/src/xml-p5 (set CBETA_CORPUS)",
+            corpus.join("xml-p5").display(),
+            corpus.display()
+        ));
+    }
     let gaiji = GaijiMap::default();
     let mut lines: Vec<IndexableLine> = Vec::new();
     let mut works_seen = 0_u64;
