@@ -87,7 +87,10 @@ mod tests {
 
     #[test]
     fn read_json_ok_and_parse_error() {
-        let p = tmp_file("ok", r#"{"cbeta_tag":"2026R2","scope":"s","scope_hash":"h"}"#);
+        let p = tmp_file(
+            "ok",
+            r#"{"cbeta_tag":"2026R2","scope":"s","scope_hash":"h"}"#,
+        );
         let m: ScopeManifest = read_json(&p).unwrap();
         assert_eq!(m.scope_hash, "h");
         let bad = tmp_file("bad", "not-json");
@@ -122,10 +125,7 @@ mod tests {
 
     #[test]
     fn read_files_list_skips_comments_and_blanks() {
-        let p = tmp_file(
-            "files",
-            "# comment\n\nT/a.xml\n  \n#x\nT/b.xml\n",
-        );
+        let p = tmp_file("files", "# comment\n\nT/a.xml\n  \n#x\nT/b.xml\n");
         let files = read_files_list(&p).unwrap();
         assert_eq!(files, vec!["T/a.xml".to_string(), "T/b.xml".to_string()]);
         let _ = fs::remove_file(&p);

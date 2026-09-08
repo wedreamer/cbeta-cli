@@ -15,7 +15,7 @@ pub fn active_artifact(root: &Path) -> Result<PathBuf> {
     if current.is_file() {
         let name = fs::read_to_string(&current)?;
         let name = name.trim();
-        if !name.is_empty() {
+        if cbeta_index::require_path_segment(name).is_ok() {
             let p = root.join(name);
             if p.is_dir() {
                 return Ok(p);

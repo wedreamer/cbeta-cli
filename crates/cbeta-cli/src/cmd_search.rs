@@ -111,8 +111,8 @@ fn highlight(text: &str, terms: &[String], color: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cbeta_core::{Action, Filters, Format, Hit};
     use crate::env_paths::env_lock;
+    use cbeta_core::{Action, Filters, Format, Hit};
 
     fn mini_corpus() -> std::path::PathBuf {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")

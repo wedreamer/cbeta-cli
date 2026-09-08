@@ -117,7 +117,7 @@ pub fn write_artifact(
     lines: &[IndexableLine],
     gaiji: &GaijiMap,
 ) -> Result<PathBuf> {
-    let final_dir = root.join(format!("{tag}-{scope_hash}"));
+    let final_dir = root.join(crate::paths::artifact_dir_name(tag, scope_hash)?);
     write_atomic_dir(&final_dir, lines, gaiji)?;
     Ok(final_dir)
 }

@@ -30,7 +30,10 @@ mod tests {
     #[test]
     fn display_formats_xml_and_missing() {
         assert_eq!(Error::Xml("boom".into()).to_string(), "xml: boom");
-        assert_eq!(Error::Missing("TEI xml:id").to_string(), "missing TEI xml:id");
+        assert_eq!(
+            Error::Missing("TEI xml:id").to_string(),
+            "missing TEI xml:id"
+        );
     }
 
     #[test]
