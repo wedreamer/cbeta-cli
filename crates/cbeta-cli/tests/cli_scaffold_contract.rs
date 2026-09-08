@@ -378,6 +378,67 @@ fn build_json_has_no_parsed_query() {
 }
 
 #[test]
+fn json_flag_after_subcommand() {
+    // Given: mini index
+    // When: humans put --json after get/catalog/info (not only before the subcommand)
+    // Then: product JSON, not clap usage error
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("json-after");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let get = cbeta_env(&corpus, &index)
+        .args(["get", "--json", "T30n1578_p0268b21"])
+        .output()
+        .expect("get --json");
+    assert_eq!(
+        get.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&get.stderr)
+    );
+    let gv: serde_json::Value = serde_json::from_slice(&get.stdout).expect("json");
+    assert_eq!(gv["hit"]["line_id"], "T30n1578_p0268b21");
+
+    let cat = cbeta_env(&corpus, &index)
+        .args(["catalog", "--json"])
+        .output()
+        .expect("catalog --json");
+    assert_eq!(
+        cat.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&cat.stderr)
+    );
+    assert!(serde_json::from_slice::<serde_json::Value>(&cat.stdout)
+        .expect("json")
+        .as_array()
+        .expect("arr")
+        .iter()
+        .any(|e| e["work_id"] == "T1578"));
+
+    let info = cbeta_env(&corpus, &index)
+        .args(["info", "--json"])
+        .output()
+        .expect("info --json");
+    assert_eq!(
+        info.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
+    let info_v: cbeta_core::IndexInfo = serde_json::from_slice(&info.stdout).expect("IndexInfo");
+    assert_eq!(info_v.artifact_id, "2026R2+c1f1x7a0");
+}
+
+#[test]
 fn author_type_flags_json() {
     // Given: search with --author / --type filters
     // When: --json dumps Command

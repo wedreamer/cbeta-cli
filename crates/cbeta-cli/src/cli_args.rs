@@ -14,21 +14,21 @@ pub struct Cli {
     pub command: Option<Cmds>,
     /// 检索字串（无子命令时等价 search）
     pub query: Option<String>,
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub json: bool,
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub explain: bool,
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub plain: bool,
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub canon: Option<String>,
-    #[arg(long = "author")]
+    #[arg(long = "author", global = true)]
     pub authors: Vec<String>,
-    #[arg(long = "type")]
+    #[arg(long = "type", global = true)]
     pub types: Vec<String>,
-    #[arg(long = "work")]
+    #[arg(long = "work", global = true)]
     pub works: Vec<String>,
-    #[arg(long = "title")]
+    #[arg(long = "title", global = true)]
     pub titles: Vec<String>,
 }
 
@@ -36,22 +36,6 @@ pub struct Cli {
 pub enum Cmds {
     Search {
         q: Option<String>,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        explain: bool,
-        #[arg(long)]
-        plain: bool,
-        #[arg(long)]
-        canon: Option<String>,
-        #[arg(long = "author")]
-        authors: Vec<String>,
-        #[arg(long = "type")]
-        types: Vec<String>,
-        #[arg(long = "work")]
-        works: Vec<String>,
-        #[arg(long = "title")]
-        titles: Vec<String>,
     },
     Verify {
         text: String,
@@ -106,37 +90,13 @@ pub fn resolve(cli: Cli) -> CliOut {
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
         },
-        Some(Cmds::Search {
-            q,
-            json,
-            explain,
-            plain,
-            canon,
-            authors,
-            types,
-            works,
-            titles,
-        }) => CliOut {
+        Some(Cmds::Search { q }) => CliOut {
             action: Action::Search,
             q,
-            json: json || cli.json,
-            explain: explain || cli.explain,
-            plain: plain || cli.plain,
-            filters: merge_filters(
-                canon.or(cli.canon),
-                if authors.is_empty() {
-                    cli.authors
-                } else {
-                    authors
-                },
-                if types.is_empty() { cli.types } else { types },
-                if works.is_empty() { cli.works } else { works },
-                if titles.is_empty() {
-                    cli.titles
-                } else {
-                    titles
-                },
-            ),
+            json: cli.json,
+            explain: cli.explain,
+            plain: cli.plain,
+            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
         },
         Some(Cmds::Verify { text }) => CliOut {
             action: Action::Verify,
