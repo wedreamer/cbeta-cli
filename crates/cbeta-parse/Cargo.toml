@@ -1,0 +1,10 @@
+[package]
+name = "cbeta-parse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CBETA TEI P5 parser"
+
+[dependencies]
+cbeta-core.workspace = true
+thiserror.workspace = true

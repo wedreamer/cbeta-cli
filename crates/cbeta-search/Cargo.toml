@@ -1,0 +1,11 @@
+[package]
+name = "cbeta-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lexical / proximity / verify search over a CBETA index"
+
+[dependencies]
+cbeta-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true

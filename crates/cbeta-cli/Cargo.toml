@@ -1,0 +1,16 @@
+[package]
+name = "cbeta-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Human-first CBETA search CLI (MCP is cbeta serve)"
+
+[[bin]]
+name = "cbeta"
+path = "src/main.rs"
+
+[dependencies]
+cbeta-core.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
