@@ -33,3 +33,79 @@ pub fn xml_p5_root(corpus: &Path) -> PathBuf {
 pub fn index_root() -> Result<PathBuf, String> {
     cbeta_index::index_root().map_err(|e| e.to_string())
 }
+
+/// Process-wide lock for tests that mutate `CBETA_*` / `HOME` / `NO_COLOR`.
+///
+/// WHY: rustc runs unit tests in parallel inside one binary; per-module mutexes
+/// still race on the process environment.
+#[cfg(test)]
+pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corpus_root_prefers_cbeta_corpus_env() {
+        let _g = env_lock();
+        std::env::set_var("CBETA_CORPUS", "/tmp/cbeta-corpus-ut");
+        let p = corpus_root().unwrap();
+        assert_eq!(p, PathBuf::from("/tmp/cbeta-corpus-ut"));
+        std::env::remove_var("CBETA_CORPUS");
+    }
+
+    #[test]
+    fn corpus_root_falls_back_to_home_when_env_empty() {
+        let _g = env_lock();
+        std::env::set_var("CBETA_CORPUS", "");
+        std::env::set_var("HOME", "/tmp/home-ut-corpus");
+        let p = corpus_root().unwrap();
+        assert_eq!(
+            p,
+            PathBuf::from("/tmp/home-ut-corpus").join(DEFAULT_CORPUS_REL)
+        );
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("HOME");
+    }
+
+    #[test]
+    fn corpus_root_errors_without_home_or_corpus() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("HOME");
+        let err = corpus_root().unwrap_err();
+        assert!(err.contains("HOME"));
+    }
+
+    #[test]
+    fn xml_p5_root_prefers_top_level_then_src() {
+        let base = std::env::temp_dir().join(format!(
+            "cbeta-xml-root-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("src/xml-p5")).unwrap();
+        assert_eq!(xml_p5_root(&base), base.join("src/xml-p5"));
+        std::fs::create_dir_all(base.join("xml-p5")).unwrap();
+        assert_eq!(xml_p5_root(&base), base.join("xml-p5"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn index_root_maps_cbeta_index_error_to_string() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        let err = index_root().unwrap_err();
+        assert!(!err.is_empty());
+    }
+}

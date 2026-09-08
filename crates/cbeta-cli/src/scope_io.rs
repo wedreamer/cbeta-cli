@@ -65,3 +65,70 @@ pub fn read_files_list(path: &Path) -> Result<Vec<String>, String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn tmp_file(name: &str, body: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-scope-io-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let mut f = fs::File::create(&p).unwrap();
+        f.write_all(body.as_bytes()).unwrap();
+        p
+    }
+
+    #[test]
+    fn read_json_ok_and_parse_error() {
+        let p = tmp_file("ok", r#"{"cbeta_tag":"2026R2","scope":"s","scope_hash":"h"}"#);
+        let m: ScopeManifest = read_json(&p).unwrap();
+        assert_eq!(m.scope_hash, "h");
+        let bad = tmp_file("bad", "not-json");
+        assert!(read_json::<ScopeManifest>(&bad).is_err());
+        let missing = std::env::temp_dir().join("cbeta-scope-io-missing-nope");
+        assert!(read_json::<ScopeManifest>(&missing).is_err());
+        let _ = fs::remove_file(&p);
+        let _ = fs::remove_file(&bad);
+    }
+
+    #[test]
+    fn read_catalog_skips_blank_lines_and_parses_rows() {
+        let body = r#"
+{"work_id":"T0235","canon":"T","path":"a.xml","title":"t","author":"a"}
+
+{"work_id":"T1578","canon":"T","path":"b.xml","title":"u","author":"b"}
+"#;
+        let p = tmp_file("cat", body);
+        let rows = read_catalog(&p).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].work_id, "T0235");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn read_catalog_rejects_bad_json_line() {
+        let p = tmp_file("cat-bad", "not-json-line\n");
+        let err = read_catalog(&p).unwrap_err();
+        assert!(err.contains("line 1"));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn read_files_list_skips_comments_and_blanks() {
+        let p = tmp_file(
+            "files",
+            "# comment\n\nT/a.xml\n  \n#x\nT/b.xml\n",
+        );
+        let files = read_files_list(&p).unwrap();
+        assert_eq!(files, vec!["T/a.xml".to_string(), "T/b.xml".to_string()]);
+        let _ = fs::remove_file(&p);
+        assert!(read_files_list(Path::new("/no/such/files.txt")).is_err());
+    }
+}
