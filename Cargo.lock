@@ -166,6 +166,8 @@ name = "cbeta-cli"
 version = "0.1.0"
 dependencies = [
  "cbeta-core",
+ "cbeta-index",
+ "cbeta-parse",
  "clap",
  "serde",
  "serde_json",
