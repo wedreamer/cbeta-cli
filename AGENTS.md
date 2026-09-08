@@ -9,7 +9,7 @@ Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer
 ## AGENT LANGUAGE
 
 - 对用户优先说**简体中文**。代码、标识符、命令、路径、crate 名保持原文。
-- 与产品约定分开：经文查询输入简体、展示默认繁體（`--script s` 才简体）。不要把对话语言改成繁体。
+- 与产品约定分开：经文查询输入简体、展示默认繁體，这是 intent。切换靠 `--script` / `--window`，均为 planned UX（`docs/human-ux.md` 规则 5–6），尚不在 clap 上，勿当作可用标志。不要把对话语言改成繁体。
 
 ## STRUCTURE
 
@@ -33,6 +33,13 @@ Crate graph: only `cbeta-cli` → `cbeta-core` is wired. Parse/index/search are 
 - Workspace deps only in root `[workspace.dependencies]`; members use `.workspace = true`.
 - `thiserror` is a declared dep for library errors, but `ParseError` in cbeta-core is hand-rolled today. Do not migrate it in this PR.
 
+## STYLE / COMMENTS
+
+- Comments say WHY, not WHAT; the code already says what.
+- rustdoc on every `pub` item.
+- Production logic stays ≤250 LOC per module; split rather than bloat.
+- Library crates: no `unwrap` / `expect`—return errors. The binary may `expect` only with a stated reason.
+
 ## GIT SIGNING
 
 Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account as a **Signing key** (Settings → SSH and GPG keys). An authentication key does not count until it is also added as a signing key. Never `--no-gpg-sign`.
@@ -42,6 +49,7 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
 - `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: **runs in CI**; asserts today's scaffold behavior (Command dump, exit 2).
 - `crates/cbeta-cli/tests/cli_product_hits.rs`: `#[ignore = "L-search"]`; the future product contract, expected to fail until L-search.
+- Workspace **line** coverage ≥95 via `cargo llvm-cov` (command in COMMANDS).
 - CI exists: `.github/workflows/ci.yml`.
 
 ## KNOWN SCAFFOLD BUG (do not freeze)
@@ -85,8 +93,9 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 cargo check --workspace --all-targets
 cargo test --workspace
 cargo test -p cbeta-core -- plus_is_near_30 --exact
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
+cargo llvm-cov --workspace --all-targets --locked --fail-under-lines 95 --show-missing-lines
 cargo run -p cbeta-cli -- search --explain --json '空性+缘生'
 # product (not implemented): cbeta build --scope taisho
 ```
