@@ -1,0 +1,10 @@
+{
+  "cbeta_tag": "2026R2",
+  "scope": "ci-minimal",
+  "scope_hash": "c1f1x7a0",
+  "artifact_id": "2026R2+c1f1x7a0",
+  "work_count": 2,
+  "file_count": 2,
+  "license": "cc-by-nc-sa",
+  "exclude_canons": ["LC", "TX", "Y", "YP"]
+}

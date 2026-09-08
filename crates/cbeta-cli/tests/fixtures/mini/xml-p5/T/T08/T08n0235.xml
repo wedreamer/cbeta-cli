@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xmlns:cb="http://www.cbeta.org/ns/1.0" xml:id="T08n0235">
+  <teiHeader>
+    <fileDesc>
+      <titleStmt><title>金剛般若波羅蜜經</title></titleStmt>
+    </fileDesc>
+  </teiHeader>
+  <text>
+    <body>
+      <cb:juan n="1" fun="open"/>
+      <lb n="0752b01"/>如是我聞一時佛在
+      <lb n="0752b02"/>應無所住而生其心
+      <lb n="0752b03"/>色不異空空不異色
+    </body>
+  </text>
+</TEI>
