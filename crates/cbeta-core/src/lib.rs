@@ -1,5 +1,14 @@
+//! Shared protocol types and query DSL for CBETA offline search.
+//!
+//! This crate owns `Command` / `Hit` / `Filters` / `parse_query` used by every
+//! transport (CLI, MCP, HTTP). It is **not** the `cbeta` binary — that lives in
+//! `cbeta-cli`.
+
+#![deny(missing_docs)]
+
 use serde::{Deserialize, Serialize};
 
+/// Failure from [`parse_query`] (hand-rolled; not `thiserror` yet).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError(pub String);
 
@@ -10,31 +19,51 @@ impl std::fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
+/// What the user/agent asked the system to do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
+    /// Full-text / DSL search over the index.
     #[default]
     Search,
+    /// Check whether pasted text is original CBETA wording.
     Verify,
+    /// Fetch one line by `line_id`.
     Get,
+    /// Open a work/passage (type-only today; not yet in clap).
     Read,
+    /// Format a citation string (type-only today; not yet in clap).
     Cite,
+    /// Browse catalog metadata.
     Catalog,
+    /// Show index / build info.
     Info,
+    /// Build or rebuild the local index.
     Build,
+    /// Serve MCP/HTTP over the same `Command` surface.
     Serve,
 }
 
+/// How results should be rendered.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Format {
+    /// Human TTY output (default when interactive).
     #[default]
     Tty,
+    /// Plain text without color/decoration.
     Plain,
+    /// Single pretty JSON document.
     Json,
+    /// One JSON object per line (pipe-friendly).
     Jsonl,
 }
 
+/// Corpus scope filters shared by CLI flags and MCP fields.
+///
+/// Empty vectors mean “no restriction” on that axis. Field-level docs are
+/// intentionally omitted — the names are the contract.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Filters {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -51,41 +80,72 @@ pub struct Filters {
     pub juans: Vec<u32>,
 }
 
+/// Structured view of a human/agent query string after [`parse_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedQuery {
+    /// Original trimmed input.
     pub raw: String,
+    /// DSL mode: `keyword`, `near`, `before`, or `wildcard`.
     pub mode: String,
+    /// Term list derived from the DSL (order preserved).
     pub terms: Vec<String>,
+    /// Character window for near/before (normalized 汉字, not tokens).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub within_chars: Option<u32>,
+    /// Set when `?` single-char wildcard mode is active.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wildcard: Option<bool>,
 }
 
+/// Transport-neutral request: one shape for CLI, MCP, and HTTP.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Command {
+    /// Requested action.
     pub action: Action,
+    /// Raw query / text / id / scope string when the action needs one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
+    /// Scope filters.
     #[serde(default)]
     pub filters: Filters,
+    /// Output format.
     pub format: Format,
+    /// When true, surface parse/plan details instead of (or before) hits.
     #[serde(default)]
     pub explain: bool,
+    /// Filled when `q` was run through [`parse_query`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parsed_query: Option<ParsedQuery>,
 }
 
+/// One search hit (product shape; search engine not wired yet).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hit {
+    /// CBETA line id, shape `T31n1585_p0001a12`
+    /// (canon+vol `n` work `_p` page col line).
     pub line_id: String,
+    /// Work id such as `T1585`.
     pub work_id: String,
+    /// Work title (display default 繁體).
     pub title: String,
+    /// Raw line text as stored.
     pub text_raw: String,
+    /// Human citation, e.g. `(CBETA 2026.R2, T31, no. 1585, p. 1, a12)`.
     pub citation: String,
+    /// Ranker score (higher is better).
     pub score: f32,
 }
 
+/// Parse CBReader-style query DSL into a [`ParsedQuery`].
+///
+/// Distance is always **normalized 汉字**, never tokens. Operators:
+/// - `+` → `near` with window 30
+/// - `*` → `before` with window 30
+/// - `NEAR/N` / `BEFORE/N` → ordered window `N`
+/// - `?` → single-char wildcard mode
+///
+/// Fullwidth operators in the reject set `—＋＊＆？` error out (halfwidth only).
+/// Fullwidth comma `，` is **not** rejected.
 pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
     let raw = q.trim().to_string();
     if raw.contains('—')

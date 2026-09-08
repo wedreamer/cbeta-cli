@@ -1,4 +1,5 @@
 //! Search engine (P0 stub).
+/// P0 stub. Do not call.
 pub fn search_placeholder() {}
 
 #[cfg(test)]
