@@ -1,5 +1,8 @@
 //! Characterization tests for today's cbeta CLI scaffold contract.
 //! Pins exit codes and `--json` Command dump (not Hits). Do not "upgrade" these.
+//! Build is product-wired (IndexInfo); search/get/catalog/info/verify stay scaffold until later slices.
+
+mod common;
 
 fn cbeta() -> std::process::Command {
     std::process::Command::new(env!("CARGO_BIN_EXE_cbeta"))
@@ -144,16 +147,37 @@ fn serve_exits_2() {
 
 #[test]
 fn build_json_dumps_command() {
-    // Scaffold dump only: parent --json + --scope; do NOT treat scope-through-parse_query as product.
-    let out = cbeta()
-        .args(["--json", "build", "--scope", "taisho"])
-        .output()
-        .expect("spawn --json build --scope");
-    assert_eq!(out.status.code(), Some(0));
+    // Product: build --json against mini fixture emits IndexInfo, not Command.
+    use common::{cbeta_env, mini_corpus, temp_dir};
 
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Build);
+    let corpus = mini_corpus();
+    let index = temp_dir("build-json");
+    let out = cbeta_env(&corpus, &index)
+        .args(["--json", "build", "--scope", "ci-minimal"])
+        .output()
+        .expect("spawn --json build --scope ci-minimal");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "build --json exit 0; stdout={stdout} stderr={stderr}"
+    );
+
+    let info: cbeta_core::IndexInfo =
+        serde_json::from_slice(&out.stdout).expect("stdout deserializes as IndexInfo");
+    assert_eq!(info.cbeta_tag, "2026R2");
+    assert_eq!(info.scope, "ci-minimal");
+    assert_eq!(info.artifact_id, "2026R2+c1f1x7a0");
+    assert!(info.work_count >= 1, "work_count={}", info.work_count);
+
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let obj = value.as_object().expect("object");
+    assert!(
+        !obj.contains_key("action"),
+        "must not dump Command; keys={:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -236,23 +260,27 @@ fn verify_json_has_no_parsed_query() {
 
 #[test]
 fn build_json_has_no_parsed_query() {
-    // Given: build --scope with --json
-    // When: CLI dumps Command
-    // Then: action=Build and parsed_query is absent (scope is not a search query)
-    let out = cbeta()
-        .args(["--json", "build", "--scope", "taisho"])
+    // Given: product build --json against mini fixture
+    // When: stdout is IndexInfo
+    // Then: no parsed_query / action keys (scope never goes through parse_query)
+    use common::{cbeta_env, mini_corpus, temp_dir};
+
+    let corpus = mini_corpus();
+    let index = temp_dir("build-noparse");
+    let out = cbeta_env(&corpus, &index)
+        .args(["--json", "build", "--scope", "ci-minimal"])
         .output()
-        .expect("spawn --json build --scope");
+        .expect("spawn --json build");
     assert_eq!(out.status.code(), Some(0));
 
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Build);
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let obj = value.as_object().expect("object");
     assert!(
-        cmd.parsed_query.is_none(),
-        "build scope must not run parse_query; got {:?}",
-        cmd.parsed_query
+        !obj.contains_key("parsed_query") && !obj.contains_key("action"),
+        "build product JSON must not be Command; keys={:?}",
+        obj.keys().collect::<Vec<_>>()
     );
+    assert!(obj.contains_key("artifact_id"), "expected IndexInfo shape");
 }
 
 #[test]

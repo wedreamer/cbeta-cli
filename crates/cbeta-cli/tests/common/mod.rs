@@ -25,7 +25,9 @@ pub fn temp_dir(prefix: &str) -> PathBuf {
         nanos,
         n
     ));
-    std::fs::create_dir_all(&p).expect("create temp dir");
+    if let Err(e) = std::fs::create_dir_all(&p) {
+        panic!("create temp dir {}: {e}", p.display());
+    }
     p
 }
 
