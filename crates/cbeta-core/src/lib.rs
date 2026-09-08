@@ -88,7 +88,12 @@ pub struct Hit {
 
 pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
     let raw = q.trim().to_string();
-    if raw.contains('—') || raw.contains('＋') || raw.contains('＊') || raw.contains('＆') || raw.contains('？') {
+    if raw.contains('—')
+        || raw.contains('＋')
+        || raw.contains('＊')
+        || raw.contains('＆')
+        || raw.contains('？')
+    {
         return Err(ParseError(
             "fullwidth operator rejected; use halfwidth + * & , - ? or NEAR/N".into(),
         ));
