@@ -12,7 +12,9 @@ mod tokenizer;
 mod writer;
 
 pub use error::{Error, Result};
-pub use paths::{artifact_id, index_dir, index_root, tmp_dir_for};
+pub use paths::{
+    artifact_dir_name, artifact_id, index_dir, index_root, require_path_segment, tmp_dir_for,
+};
 pub use schema::{build_line_schema, LineSchema};
 pub use tokenizer::{tokenize_all, CjkNgramTokenizer, CJK_TOKENIZER_NAME};
 pub use writer::{

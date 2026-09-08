@@ -5,6 +5,29 @@ use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 
+/// Reject empty / `.` / `..` / separators so `{root}/{seg}` cannot escape `root`.
+pub fn require_path_segment(s: &str) -> Result<&str> {
+    if s.is_empty()
+        || s == "."
+        || s == ".."
+        || s.contains('/')
+        || s.contains('\\')
+        || s.contains('\0')
+    {
+        return Err(Error::Path(format!("unsafe path segment: {s:?}")));
+    }
+    Ok(s)
+}
+
+/// `{tag}-{scope_hash}` after both halves pass [`require_path_segment`].
+pub fn artifact_dir_name(tag: &str, scope_hash: &str) -> Result<String> {
+    Ok(format!(
+        "{}-{}",
+        require_path_segment(tag)?,
+        require_path_segment(scope_hash)?
+    ))
+}
+
 /// Default relative index root under `$HOME`.
 const DEFAULT_REL: &str = ".cbeta/index";
 
@@ -22,7 +45,7 @@ pub fn index_root() -> Result<PathBuf> {
 
 /// Artifact directory: `{root}/{cbeta_tag}-{scope_hash}/`.
 pub fn index_dir(tag: &str, scope_hash: &str) -> Result<PathBuf> {
-    Ok(index_root()?.join(format!("{tag}-{scope_hash}")))
+    Ok(index_root()?.join(artifact_dir_name(tag, scope_hash)?))
 }
 
 /// Artifact id string `{cbeta_tag}+{scope_hash}`.
@@ -69,5 +92,17 @@ mod tests {
         let d = index_dir("2026R2", "abc").unwrap();
         assert!(d.ends_with("2026R2-abc"));
         std::env::remove_var("HOME");
+    }
+
+    #[test]
+    fn rejects_path_escape_segments() {
+        assert!(require_path_segment("").is_err());
+        assert!(require_path_segment(".").is_err());
+        assert!(require_path_segment("..").is_err());
+        assert!(require_path_segment("../x").is_err());
+        assert!(require_path_segment("a/b").is_err());
+        assert!(require_path_segment("a\\b").is_err());
+        assert!(artifact_dir_name("2026R2", "../etc").is_err());
+        assert_eq!(artifact_dir_name("2026R2", "abc").unwrap(), "2026R2-abc");
     }
 }

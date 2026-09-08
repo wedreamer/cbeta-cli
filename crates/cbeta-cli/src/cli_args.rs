@@ -202,12 +202,30 @@ mod tests {
     #[test]
     fn resolve_all_subcommands() {
         let cases: Vec<(Cmds, Action, Option<&str>)> = vec![
-            (Cmds::Search { q: Some("q".into()) }, Action::Search, Some("q")),
+            (
+                Cmds::Search {
+                    q: Some("q".into()),
+                },
+                Action::Search,
+                Some("q"),
+            ),
             (Cmds::Verify { text: "t".into() }, Action::Verify, Some("t")),
-            (Cmds::Get { line_id: "L".into() }, Action::Get, Some("L")),
+            (
+                Cmds::Get {
+                    line_id: "L".into(),
+                },
+                Action::Get,
+                Some("L"),
+            ),
             (Cmds::Catalog, Action::Catalog, None),
             (Cmds::Info, Action::Info, None),
-            (Cmds::Build { scope: Some("s".into()) }, Action::Build, Some("s")),
+            (
+                Cmds::Build {
+                    scope: Some("s".into()),
+                },
+                Action::Build,
+                Some("s"),
+            ),
             (Cmds::Serve, Action::Serve, None),
         ];
         for (cmd, action, q) in cases {

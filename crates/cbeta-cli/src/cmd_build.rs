@@ -5,7 +5,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use cbeta_core::{Command, Format, IndexInfo};
-use cbeta_index::{artifact_id, write_artifact, IndexableLine};
+use cbeta_index::{
+    artifact_dir_name, artifact_id, require_path_segment, write_artifact, IndexableLine,
+};
 use cbeta_parse::{parse_tei_lines, GaijiMap};
 
 use crate::citation::format_citation;
@@ -14,6 +16,13 @@ use crate::scope_io::{read_catalog, read_files_list, read_json, CatalogRow, Scop
 
 /// Canons never indexed by default (Category B).
 const SKIP_CANONS: &[&str] = &["Y", "TX", "LC", "YP"];
+
+fn rel_is_under(rel: &str) -> bool {
+    let p = Path::new(rel);
+    !p.is_absolute()
+        && p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
 
 /// Run build; returns process exit code (0 ok, 2 usage/missing corpus).
 pub fn run(cmd: &Command) -> i32 {
@@ -60,6 +69,7 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         ));
     }
 
+    require_path_segment(scope).map_err(|e| e.to_string())?;
     let scope_dir = corpus.join("scopes").join(scope);
     let manifest_path = scope_dir.join("MANIFEST.json");
     if !manifest_path.is_file() {
@@ -70,6 +80,9 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
     }
 
     let manifest: ScopeManifest = read_json(&manifest_path)?;
+    require_path_segment(&manifest.cbeta_tag).map_err(|e| e.to_string())?;
+    require_path_segment(&manifest.scope_hash).map_err(|e| e.to_string())?;
+    require_path_segment(&manifest.scope).map_err(|e| e.to_string())?;
     let catalog_path = scope_dir.join("catalog.jsonl");
     let files_path = scope_dir.join("files.txt");
     let catalog = read_catalog(&catalog_path)?;
@@ -105,6 +118,9 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         if skip.iter().any(|c| c == &row.canon) {
             continue;
         }
+        if !rel_is_under(rel) {
+            return Err(format!("files.txt path escapes xml-p5: {rel}"));
+        }
         let xml_path = xml_root.join(rel);
         let xml = fs::read_to_string(&xml_path)
             .map_err(|e| format!("read {}: {e}", xml_path.display()))?;
@@ -126,7 +142,8 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
     let root = index_root()?;
     fs::create_dir_all(&root).map_err(|e| format!("create index root: {e}"))?;
 
-    let art_name = format!("{}-{}", manifest.cbeta_tag, manifest.scope_hash);
+    let art_name =
+        artifact_dir_name(&manifest.cbeta_tag, &manifest.scope_hash).map_err(|e| e.to_string())?;
     let final_dir = root.join(&art_name);
     if final_dir.exists() {
         fs::remove_dir_all(&final_dir)
@@ -210,8 +227,8 @@ fn write_sidecar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cbeta_core::{Action, Filters, Format};
     use crate::env_paths::env_lock;
+    use cbeta_core::{Action, Filters, Format};
 
     fn mini_corpus() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
