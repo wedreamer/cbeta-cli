@@ -5,6 +5,12 @@ on:
     branches: ["**"]
   pull_request:
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: Check & Test
@@ -16,7 +22,12 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -24,5 +35,5 @@ jobs:
       - name: Clippy lints
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run workspace tests
-        run: cargo test --workspace
+      - name: Workspace line coverage
+        run: cargo llvm-cov --workspace --all-targets --locked --fail-under-lines 95 --show-missing-lines
