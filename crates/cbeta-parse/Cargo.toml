@@ -8,6 +8,9 @@ description = "CBETA TEI P5 parser"
 [dependencies]
 cbeta-core.workspace = true
 thiserror.workspace = true
+quick-xml.workspace = true
+unicode-normalization.workspace = true
+ferrous-opencc.workspace = true
 
 [lints]
 workspace = true
