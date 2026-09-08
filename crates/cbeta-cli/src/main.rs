@@ -3,6 +3,7 @@
 mod citation;
 mod cli_args;
 mod cmd_build;
+mod cmd_catalog;
 mod cmd_get;
 mod cmd_search;
 mod env_paths;
@@ -60,7 +61,9 @@ fn main() {
         }
         Action::Search => std::process::exit(cmd_search::run(&cmd)),
         Action::Get => std::process::exit(cmd_get::run(&cmd)),
-        Action::Catalog | Action::Info | Action::Verify if out.json => {
+        Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
+        Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
+        Action::Verify if out.json => {
             #[allow(clippy::expect_used)]
             {
                 println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
