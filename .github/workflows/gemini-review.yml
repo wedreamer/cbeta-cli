@@ -16,6 +16,8 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Environment secret (not repository secret); omit this and GEMINI_API_KEY is empty.
+    environment: GEMINI_API_KEY
     timeout-minutes: 10
     continue-on-error: true
     steps:
