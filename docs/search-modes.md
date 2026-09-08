@@ -1,52 +1,85 @@
-# Search modes
+# Search modes for CLI and MCP agents
 
-Distance unit is always **Chinese characters after normalization**, not words.
-Default window is a paragraph / gāthā, not a juan (juan is too coarse for agents).
-CBReader default distance is 30; agents should pass `distance` explicitly.
+Distance unit is always **Chinese characters after normalization**, not tokens.
+CBReader default proximity is 30 characters; agents should pass `distance` explicitly.
 
-## Modes
+## Tools (keep six; do not explode into search_*)
 
-| mode | Meaning | Engine |
-|---|---|---|
-| `keyword` | bag of terms, BM25 | `text_ngram` |
-| `phrase` | adjacent exact string | `text_phrase` slop 0 |
-| `near` | all clauses within N chars, order free | bigram AND + span check on `text_norm` |
-| `before` | A then B within N chars | same, require start(A) < start(B) |
-| `boolean` | must / should / must_not of the above | Tantivy BooleanQuery + span post-filter |
-| `fuzzy` | 1–2 char variants | n-gram recall + RapidFuzz |
-| `wildcard` | `?` = one char, ≤2 wildcards, clause ≤8 | expand then phrase |
-| `dsl` | CBReader string `A+B` / `A*B` | parsed into structured clauses |
+| CLI | MCP | Purpose |
+| --- | --- | --- |
+| `cbeta search` | `cbeta_search` | lexical / proximity / boolean / fuzzy / wildcard |
+| `cbeta verify` | `cbeta_verify_quote` | original-text check + similar sentences |
+| `cbeta get` | `cbeta_get_passage` | fetch context by line_id |
+| `cbeta catalog` | `cbeta_list_catalog` | canons / works / authors / categories |
+| `cbeta info` | `cbeta_index_info` | tag + scope_hash |
+| `cbeta serve` | process | stdio or HTTP MCP |
 
-Skip in v1: full-corpus regex. Semantic is a separate tool later.
+## `cbeta_search` modes
 
-## Why PhraseQuery slop is not enough
+| mode | When an agent should pick it |
+| --- | --- |
+| `keyword` | bag of terms, BM25, default |
+| `phrase` | exact adjacent sequence, 偈颂 / 术语 |
+| `near` | A within N chars of B, order ignored |
+| `before` | A then B within N chars, order required |
+| `boolean` | AND / OR / NOT of terms, phrases, or near-clauses |
+| `fuzzy` | 1–2 char typo / 异体 after n-gram recall |
+| `wildcard` | unknown single char `?`, max 2 wildcards |
+| `dsl` | power-user string: CBReader `+ * & , - ?` or `NEAR/16` |
 
-Tantivy slop is a budget across every unigram. `PhraseQuery(["空","性","缘","生"], slop=16)` would also allow gaps *inside* 空性. Implementation:
+Do not ship regex-over-corpus in v1. Semantic search is a later extra tool, never mixed into verify.
 
-1. Recall with AND of each clause’s char bigrams
-2. Confirm on stored `text_norm` spans: `min_edge_distance ≤ N`
-3. Optional first-char PhraseQuery only as a candidate cut
-
-## Agent call
+## Structured near (preferred for agents)
 
 ```json
 {
   "mode": "near",
-  "clauses": ["空性", "缘生"],
-  "distance": 16,
-  "ordered": false,
-  "filters": { "canons": ["T"], "work_types": ["lun"] },
+  "clauses": [
+    {"text": "空性"},
+    {"text": "缘生", "within_chars": 16, "ordered": false}
+  ],
+  "filters": {"canons": ["T"], "work_types": ["lun"]},
+  "window": "paragraph",
   "limit": 20
 }
 ```
 
-CLI:
+`window`: `paragraph` (default, agent-friendly) | `gatha` | `juan` (CBReader-compatible, coarser).
+
+## String DSL (humans + CBReader aliases)
+
+Preferred agent string (self-describing):
 
 ```text
-cbeta search --mode near --clause 空性 --clause 缘生 --distance 16 --canon T
-cbeta search --dsl '空性+缘生' --distance 16
-cbeta serve --mcp stdio
+空性 NEAR/16 缘生
+真如 BEFORE/8 依他起 NOT 外道
+莲?色 AND 阿罗汉
 ```
 
-CBReader aliases (human / `dsl` only, not the primary agent syntax):
-`+` near, `*` before, `&` and, `,` or, `-` not, `?` one char, `()` group.
+Accepted CBReader aliases (parser only; do not document these as the agent API):
+
+```text
+空性+缘生          # NEAR default 30
+空性*缘生          # BEFORE default 30
+佛陀&阿难          # AND same window
+莲?色,莲花色       # OR + wildcard
+佛陀-佛陀曰        # EXCLUDE
+```
+
+Fullwidth ＋＊＆，？ are rejected with a clear error asking for halfwidth.
+
+## Engine notes
+
+Tantivy `PhraseQuery` slop is a budget over unigrams and cannot encode
+“multi-char phrase A near multi-char phrase B” without tearing A/B apart.
+Implementation:
+
+1. Recall with Boolean AND of each clause’s char 2-grams
+2. Confirm on stored `text_norm` using character-span distances
+3. Optional PhraseQuery on first/last chars of each clause as a candidate cut
+
+## Golden proximity cases
+
+- `真如 NEAR/16 缘起` inside 瑜伽/唯识部类
+- `莲?色` → 莲華色 and 莲花色
+- user verse via `verify`, not `near`
