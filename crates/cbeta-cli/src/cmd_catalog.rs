@@ -212,3 +212,218 @@ fn read_catalog_rows(path: &Path) -> Result<Vec<CatalogRow>, String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbeta_core::{Action, Filters, Format};
+    use crate::env_paths::env_lock;
+
+    fn mini_corpus() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-cmd-cat-{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn build_mini(index: &Path) {
+        std::env::set_var("CBETA_CORPUS", mini_corpus());
+        std::env::set_var("CBETA_INDEX", index);
+        let cmd = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(crate::cmd_build::run(&cmd), 0);
+    }
+
+    #[test]
+    fn catalog_and_info_json_tty_and_filters() {
+        let _g = env_lock();
+        let index = temp_dir("idx");
+        build_mini(&index);
+
+        let mut cmd = Command {
+            action: Action::Catalog,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.format = Format::Tty;
+        assert_eq!(run_catalog(&cmd), 0);
+
+        cmd.filters.works = vec!["T1578".into()];
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.filters = Filters {
+            authors: vec!["玄奘".into()],
+            ..Filters::default()
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.filters = Filters {
+            titles: vec!["掌珍".into()],
+            ..Filters::default()
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.filters = Filters {
+            types: vec!["lun".into()],
+            ..Filters::default()
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.filters = Filters {
+            canons: vec!["T".into()],
+            ..Filters::default()
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+        cmd.filters = Filters {
+            works: vec!["NOPE".into()],
+            ..Filters::default()
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+
+        cmd.action = Action::Info;
+        cmd.filters = Filters::default();
+        cmd.format = Format::Json;
+        assert_eq!(run_info(&cmd), 0);
+        cmd.format = Format::Tty;
+        assert_eq!(run_info(&cmd), 0);
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&index);
+    }
+
+    #[test]
+    fn catalog_and_info_error_paths() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("HOME");
+        let cmd = Command {
+            action: Action::Catalog,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run_catalog(&cmd), 2);
+        assert_eq!(run_info(&cmd), 2);
+    }
+
+    #[test]
+    fn info_manifest_fallback_and_tag_hash_paths() {
+        let _g = env_lock();
+        let index = temp_dir("man-fb");
+        build_mini(&index);
+        let art = index.join("2026R2-c1f1x7a0");
+        let _ = fs::remove_file(art.join("cbeta-meta.json"));
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Info,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run_info(&cmd), 0);
+
+        let (tag, hash) = tag_hash_from_art(&art).unwrap();
+        assert_eq!(tag, "2026R2");
+        assert_eq!(hash, "c1f1x7a0");
+
+        let bare = temp_dir("bare-art");
+        let (t2, h2) = tag_hash_from_art(&bare).unwrap();
+        assert_eq!(t2, "2026R2");
+        assert!(h2.is_empty());
+
+        let meta_only = temp_dir("meta-art");
+        fs::write(
+            meta_only.join("cbeta-meta.json"),
+            r#"{"cbeta_tag":"2026R2","artifact_id":"2026R2+deadbeef","scope":"s","work_count":1,"index_path":"x"}"#,
+        )
+        .unwrap();
+        let (t3, h3) = tag_hash_from_art(&meta_only).unwrap();
+        assert_eq!(t3, "2026R2");
+        assert_eq!(h3, "deadbeef");
+
+        fs::write(index.join("CURRENT"), "2026R2-c1f1x7a0\n").unwrap();
+        let _ = fs::remove_file(art.join("MANIFEST.json"));
+        assert!(load_info().is_err());
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&index);
+        let _ = fs::remove_dir_all(&bare);
+        let _ = fs::remove_dir_all(&meta_only);
+    }
+
+    #[test]
+    fn catalog_falls_back_to_corpus_scope() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("no-cat-sidecar");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Catalog,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run_catalog(&cmd), 0);
+
+        let cat = corpus.join("scopes/ci-minimal/catalog.jsonl");
+        let rows = read_catalog_rows(&cat).unwrap();
+        assert!(!rows.is_empty());
+        let blank = temp_dir("blank-cat");
+        let blank_cat = blank.join("c.jsonl");
+        fs::write(&blank_cat, "\n\n").unwrap();
+        assert!(read_catalog_rows(&blank_cat).unwrap().is_empty());
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&index);
+        let _ = fs::remove_dir_all(&blank);
+    }
+
+    #[test]
+    fn catalog_missing_corpus_catalog_errors() {
+        let _g = env_lock();
+        let corpus = temp_dir("empty-corp");
+        let index = temp_dir("empty-idx");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Catalog,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run_catalog(&cmd), 2);
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&corpus);
+        let _ = fs::remove_dir_all(&index);
+    }
+}

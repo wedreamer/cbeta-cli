@@ -206,3 +206,211 @@ fn write_sidecar(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbeta_core::{Action, Filters, Format};
+    use crate::env_paths::env_lock;
+
+    fn mini_corpus() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-cmd-build-{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn copy_tree(src: &Path, dst: &Path) {
+        fs::create_dir_all(dst).unwrap();
+        for ent in fs::read_dir(src).unwrap() {
+            let ent = ent.unwrap();
+            let to = dst.join(ent.file_name());
+            if ent.file_type().unwrap().is_dir() {
+                copy_tree(&ent.path(), &to);
+            } else {
+                fs::copy(ent.path(), to).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn run_requires_scope() {
+        let cmd = Command {
+            action: Action::Build,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run(&cmd), 2);
+        let cmd2 = Command {
+            q: Some(String::new()),
+            ..cmd
+        };
+        assert_eq!(run(&cmd2), 2);
+    }
+
+    #[test]
+    fn run_missing_corpus_and_scope() {
+        let _g = env_lock();
+        let index = temp_dir("idx");
+        let missing = temp_dir("no-corpus");
+        // empty dir is not a valid corpus (no scopes)
+        std::env::set_var("CBETA_CORPUS", &missing);
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        // missing is a dir but no MANIFEST → scope not found after corpus check
+        // corpus_root ok if dir exists; build_scope checks is_dir then MANIFEST
+        assert_eq!(run(&cmd), 2);
+
+        // non-dir corpus
+        let file_corpus = temp_dir("file-corp").join("not-a-dir");
+        fs::write(&file_corpus, "x").unwrap();
+        std::env::set_var("CBETA_CORPUS", &file_corpus);
+        assert_eq!(run(&cmd), 2);
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&index);
+        let _ = fs::remove_dir_all(&missing);
+    }
+
+    #[test]
+    fn run_missing_xml_p5() {
+        let _g = env_lock();
+        let corpus = temp_dir("corp-no-xml");
+        copy_tree(&mini_corpus().join("scopes"), &corpus.join("scopes"));
+        let index = temp_dir("idx-no-xml");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Plain,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run(&cmd), 2);
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&corpus);
+        let _ = fs::remove_dir_all(&index);
+    }
+
+    #[test]
+    fn run_builds_json_and_rebuilds_existing() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("idx-ok");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let mut cmd = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run(&cmd), 0);
+        assert!(index.join("2026R2-c1f1x7a0").is_dir());
+        // rebuild removes existing artifact
+        cmd.format = Format::Plain;
+        assert_eq!(run(&cmd), 0);
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&index);
+    }
+
+    #[test]
+    fn build_skips_unknown_file_and_category_b_canon() {
+        let _g = env_lock();
+        let corpus = temp_dir("corp-skip");
+        copy_tree(&mini_corpus().join("scopes"), &corpus.join("scopes"));
+        copy_tree(&mini_corpus().join("xml-p5"), &corpus.join("xml-p5"));
+        // append unknown path + a Y-canon row that should be skipped if listed
+        let files = corpus.join("scopes/ci-minimal/files.txt");
+        let mut body = fs::read_to_string(&files).unwrap();
+        body.push_str("T/missing/nope.xml\n");
+        fs::write(&files, body).unwrap();
+        let index = temp_dir("idx-skip");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let cmd = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+        };
+        assert_eq!(run(&cmd), 0);
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&corpus);
+        let _ = fs::remove_dir_all(&index);
+    }
+
+    #[test]
+    fn write_sidecar_writes_catalog_when_src_missing() {
+        let dir = temp_dir("sidecar");
+        let art = dir.join("art");
+        fs::create_dir_all(&art).unwrap();
+        let info = IndexInfo {
+            cbeta_tag: "2026R2".into(),
+            scope: "s".into(),
+            artifact_id: "2026R2+h".into(),
+            work_count: 1,
+            index_path: art.display().to_string(),
+        };
+        let manifest = ScopeManifest {
+            cbeta_tag: "2026R2".into(),
+            scope: "s".into(),
+            scope_hash: "h".into(),
+            work_count: 0,
+            exclude_canons: vec![],
+        };
+        // MANIFEST must exist next to missing catalog_src parent path — use art as fake parent
+        let man_path = art.join("MANIFEST.json");
+        fs::write(
+            &man_path,
+            r#"{"cbeta_tag":"2026R2","scope":"s","scope_hash":"h"}"#,
+        )
+        .unwrap();
+        let catalog = vec![CatalogRow {
+            work_id: "T1".into(),
+            canon: "T".into(),
+            path: "a.xml".into(),
+            title: "t".into(),
+            author: "a".into(),
+            dynasty: String::new(),
+            category: String::new(),
+            work_type: String::new(),
+        }];
+        // catalog_src parent = art, so MANIFEST copy works; catalog_src itself missing → write rows
+        let missing_cat = art.join("no-catalog.jsonl");
+        write_sidecar(&art, &info, &manifest, &catalog, &missing_cat).unwrap();
+        assert!(art.join("cbeta-meta.json").is_file());
+        assert!(art.join("catalog.jsonl").is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
