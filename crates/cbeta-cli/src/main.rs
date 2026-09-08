@@ -17,7 +17,17 @@ struct Cli {
     #[arg(long)]
     explain: bool,
     #[arg(long)]
+    plain: bool,
+    #[arg(long)]
     canon: Option<String>,
+    #[arg(long = "author")]
+    authors: Vec<String>,
+    #[arg(long = "type")]
+    types: Vec<String>,
+    #[arg(long = "work")]
+    works: Vec<String>,
+    #[arg(long = "title")]
+    titles: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -29,7 +39,17 @@ enum Cmds {
         #[arg(long)]
         explain: bool,
         #[arg(long)]
+        plain: bool,
+        #[arg(long)]
         canon: Option<String>,
+        #[arg(long = "author")]
+        authors: Vec<String>,
+        #[arg(long = "type")]
+        types: Vec<String>,
+        #[arg(long = "work")]
+        works: Vec<String>,
+        #[arg(long = "title")]
+        titles: Vec<String>,
     },
     Verify {
         text: String,
@@ -46,56 +66,167 @@ enum Cmds {
     Serve,
 }
 
-fn filters(canon: Option<String>) -> Filters {
+struct CliOut {
+    action: Action,
+    q: Option<String>,
+    json: bool,
+    explain: bool,
+    plain: bool,
+    filters: Filters,
+}
+
+fn merge_filters(
+    canon: Option<String>,
+    authors: Vec<String>,
+    types: Vec<String>,
+    works: Vec<String>,
+    titles: Vec<String>,
+) -> Filters {
     Filters {
         canons: canon.into_iter().collect(),
+        authors,
+        types,
+        works,
+        titles,
         ..Filters::default()
     }
 }
 
-fn main() {
-    let cli = Cli::parse();
-    let (action, q, json, explain, canon) = match cli.command {
-        None => (Action::Search, cli.query, cli.json, cli.explain, cli.canon),
+fn resolve(cli: Cli) -> CliOut {
+    match cli.command {
+        None => CliOut {
+            action: Action::Search,
+            q: cli.query,
+            json: cli.json,
+            explain: cli.explain,
+            plain: cli.plain,
+            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
+        },
         Some(Cmds::Search {
             q,
             json,
             explain,
+            plain,
             canon,
-        }) => (Action::Search, q, json, explain, canon),
-        Some(Cmds::Verify { text }) => (Action::Verify, Some(text), cli.json, cli.explain, None),
-        Some(Cmds::Get { line_id }) => (Action::Get, Some(line_id), cli.json, false, None),
-        Some(Cmds::Catalog) => (Action::Catalog, None, cli.json, false, None),
-        Some(Cmds::Info) => (Action::Info, None, cli.json, false, None),
-        Some(Cmds::Build { scope }) => (Action::Build, scope, cli.json, false, None),
-        Some(Cmds::Serve) => (Action::Serve, None, false, false, None),
-    };
-
-    // WHY: global parse_query on any `q` is a scaffold bug (AGENTS.md KNOWN SCAFFOLD BUG) — do not treat as product.
-    let parsed = match q.as_deref() {
-        Some(raw) => match parse_query(raw) {
-            Ok(p) => Some(p),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(2);
-            }
+            authors,
+            types,
+            works,
+            titles,
+        }) => CliOut {
+            action: Action::Search,
+            q,
+            json: json || cli.json,
+            explain: explain || cli.explain,
+            plain: plain || cli.plain,
+            filters: merge_filters(
+                canon.or(cli.canon),
+                if authors.is_empty() {
+                    cli.authors
+                } else {
+                    authors
+                },
+                if types.is_empty() { cli.types } else { types },
+                if works.is_empty() { cli.works } else { works },
+                if titles.is_empty() {
+                    cli.titles
+                } else {
+                    titles
+                },
+            ),
         },
-        None => None,
+        Some(Cmds::Verify { text }) => CliOut {
+            action: Action::Verify,
+            q: Some(text),
+            json: cli.json,
+            explain: cli.explain,
+            plain: cli.plain,
+            filters: Filters::default(),
+        },
+        Some(Cmds::Get { line_id }) => CliOut {
+            action: Action::Get,
+            q: Some(line_id),
+            json: cli.json,
+            explain: false,
+            plain: cli.plain,
+            filters: Filters::default(),
+        },
+        Some(Cmds::Catalog) => CliOut {
+            action: Action::Catalog,
+            q: None,
+            json: cli.json,
+            explain: false,
+            plain: cli.plain,
+            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
+        },
+        Some(Cmds::Info) => CliOut {
+            action: Action::Info,
+            q: None,
+            json: cli.json,
+            explain: false,
+            plain: cli.plain,
+            filters: Filters::default(),
+        },
+        Some(Cmds::Build { scope }) => CliOut {
+            action: Action::Build,
+            q: scope,
+            json: cli.json,
+            explain: false,
+            plain: cli.plain,
+            filters: Filters::default(),
+        },
+        Some(Cmds::Serve) => CliOut {
+            action: Action::Serve,
+            q: None,
+            json: false,
+            explain: false,
+            plain: false,
+            filters: Filters::default(),
+        },
+    }
+}
+
+fn format_of(json: bool, plain: bool) -> Format {
+    if json {
+        Format::Json
+    } else if plain {
+        Format::Plain
+    } else {
+        Format::Tty
+    }
+}
+
+fn main() {
+    let out = resolve(Cli::parse());
+
+    // WHY: only Search runs parse_query; get/verify/build must keep raw q untouched.
+    let parsed = if out.action == Action::Search {
+        match out.q.as_deref() {
+            Some(raw) => match parse_query(raw) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(2);
+                }
+            },
+            None => None,
+        }
+    } else {
+        None
     };
 
     let cmd = Command {
-        action,
-        q,
-        filters: filters(canon),
-        format: if json { Format::Json } else { Format::Tty },
-        explain,
+        action: out.action,
+        q: out.q,
+        filters: out.filters,
+        format: format_of(out.json, out.plain),
+        explain: out.explain,
         parsed_query: parsed,
     };
 
-    if json || explain {
+    if out.json || out.explain {
         // Command is our own Serialize types; serde_json pretty-print cannot fail here.
         #[allow(clippy::expect_used)]
-        if json {
+        if out.json {
             println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
         } else if let Some(p) = &cmd.parsed_query {
             println!(
