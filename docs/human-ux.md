@@ -57,8 +57,8 @@ cbeta
 2. Every weekly human flag exists on the MCP tool.
 3. Golden tests assert CLI TTY text *and* `--json` schema from the same call.
 4. CBReader halfwidth `+ * & , - ?` must type in zsh without quoting hell where possible; document when quotes are required.
-5. Input accepts 简体; display default 繁體 (`--script s` to show simplified).
-6. Default window for humans can stay paragraph; `--window juan` exists for CBReader muscle memory.
+5. Input accepts 简体; display default 繁體 (`--script s` to show simplified). `--script` is planned UX, not on the clap surface yet.
+6. Default window for humans can stay paragraph; `--window juan` exists for CBReader muscle memory. `--window` is planned UX, not on the clap surface yet.
 
 ## What we will not hide behind MCP
 

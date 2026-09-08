@@ -3,7 +3,7 @@ name = "cbeta-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Shared Command / Hit / Passage types for cbeta-cli"
+description = "Shared Command / Hit / Filters types for cbeta-cli"
 
 [dependencies]
 serde.workspace = true
