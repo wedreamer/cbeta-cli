@@ -51,4 +51,23 @@ mod tests {
         let p = PathBuf::from("/tmp/idx/2026R2-abc");
         assert_eq!(tmp_dir_for(&p), PathBuf::from("/tmp/idx/2026R2-abc.tmp"));
     }
+
+    #[test]
+    fn index_root_env_and_home_fallback() {
+        std::env::set_var("CBETA_INDEX", "/tmp/cbeta-idx-ut");
+        assert_eq!(index_root().unwrap(), PathBuf::from("/tmp/cbeta-idx-ut"));
+        std::env::set_var("CBETA_INDEX", "");
+        std::env::set_var("HOME", "/tmp/home-idx-ut");
+        assert_eq!(
+            index_root().unwrap(),
+            PathBuf::from("/tmp/home-idx-ut").join(DEFAULT_REL)
+        );
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        assert!(index_root().is_err());
+        std::env::set_var("HOME", "/tmp/home-idx-ut2");
+        let d = index_dir("2026R2", "abc").unwrap();
+        assert!(d.ends_with("2026R2-abc"));
+        std::env::remove_var("HOME");
+    }
 }

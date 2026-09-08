@@ -73,3 +73,78 @@ fn fields_from_index(index: &Index) -> Result<LineSchema> {
         citation: get("citation")?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbeta_index::{write_artifact, IndexableLine};
+    use cbeta_parse::{GaijiMap, ParsedLine};
+    use std::fs;
+
+    fn sample() -> Vec<IndexableLine> {
+        vec![IndexableLine {
+            line: ParsedLine {
+                line_id: "T30n1578_p0268b21".into(),
+                work_id: "T1578".into(),
+                juan: 1,
+                text_raw: "真性有為空".into(),
+                lb_n: "0268b21".into(),
+            },
+            title: "t".into(),
+            author: "a".into(),
+            citation: "c".into(),
+            cbeta_tag: "2026R2".into(),
+        }]
+    }
+
+    fn temp_root() -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-open-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn active_artifact_current_and_single_dir_fallback() {
+        let root = temp_root();
+        assert!(matches!(active_artifact(&root), Err(Error::NoIndex(_))));
+
+        let art = write_artifact(&root, "2026R2", "h1", &sample(), &GaijiMap::default()).unwrap();
+        let got = active_artifact(&root).unwrap();
+        assert_eq!(got, art);
+
+        fs::write(root.join("CURRENT"), "\n").unwrap();
+        let got2 = active_artifact(&root).unwrap();
+        assert_eq!(got2, art);
+
+        fs::write(root.join("CURRENT"), "2026R2-h1\n").unwrap();
+        assert_eq!(active_artifact(&root).unwrap(), art);
+
+        fs::write(root.join("CURRENT"), "missing-name\n").unwrap();
+        assert_eq!(active_artifact(&root).unwrap(), art);
+
+        let _ = write_artifact(&root, "2026R2", "h2", &sample(), &GaijiMap::default());
+        fs::write(root.join("CURRENT"), "nope\n").unwrap();
+        assert!(matches!(active_artifact(&root), Err(Error::NoIndex(_))));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_search_index_ok() {
+        let root = temp_root();
+        let _ = write_artifact(&root, "2026R2", "hx", &sample(), &GaijiMap::default()).unwrap();
+        fs::write(root.join("CURRENT"), "2026R2-hx\n").unwrap();
+        let (idx, fields, art) = open_search_index(&root).unwrap();
+        assert!(art.ends_with("2026R2-hx"));
+        let _ = idx;
+        let _ = fields;
+        let _ = fs::remove_dir_all(&root);
+    }
+}

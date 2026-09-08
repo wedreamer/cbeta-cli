@@ -317,4 +317,59 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn missing_xml_id_errors() {
+        let xml = r#"<?xml version="1.0"?><TEI><text><body><lb n="1"/>x</body></text></TEI>"#;
+        let err = parse_tei_lines(xml).unwrap_err();
+        assert!(matches!(err, Error::Missing(_)));
+    }
+
+    #[test]
+    fn bad_xml_maps_to_xml_error() {
+        let err = parse_tei_lines("<TEI><unclosed").unwrap_err();
+        assert!(matches!(err, Error::Xml(_)));
+    }
+
+    #[test]
+    fn cdata_and_start_lb_and_empty_milestone() {
+        let xml = r#"<?xml version="1.0"?>
+<TEI id="T01n0001">
+  <teiHeader><meta/></teiHeader>
+  <text><body>
+    <milestone unit="juan" n="2"/>
+    <lb n="0001a01"></lb><![CDATA[色即是空]]><rdg>skip</rdg>
+    <lb n="0001a02"/>空即是色
+  </body></text>
+</TEI>"#;
+        let lines = parse_tei_lines(xml).unwrap();
+        assert!(lines.iter().any(|l| l.text_raw.contains("色即是空")));
+        assert!(lines.iter().any(|l| l.juan == 2));
+    }
+
+    #[test]
+    fn work_id_without_n_passthrough() {
+        assert_eq!(work_id_from_xml_id("ABC"), "ABC");
+    }
+
+    #[test]
+    fn juan_from_cb_juan_rejects_non_numeric() {
+        assert!(juan_from_cb_juan("x").is_err());
+    }
+
+    #[test]
+    fn namespaced_lb_and_header_depth() {
+        let xml = r#"<?xml version="1.0"?>
+<tei xml:id="T08n0235">
+  <teiHeader><fileDesc><title>x</title></fileDesc></teiHeader>
+  <text><body>
+    <cb:juan n="3"></cb:juan>
+    <lb n="0001b01"/>如是我聞
+  </body></text>
+</tei>"#;
+        let lines = parse_tei_lines(xml).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].juan, 3);
+        assert_eq!(lines[0].work_id, "T0235");
+    }
 }

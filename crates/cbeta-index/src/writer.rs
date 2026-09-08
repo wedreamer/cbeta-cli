@@ -261,6 +261,20 @@ mod tests {
     }
 
     #[test]
+    fn write_atomic_clears_stale_tmp_and_creates_parent() {
+        let dir = tempfile_dir();
+        let nested = dir.join("nested").join("root");
+        let final_dir = nested.join("2026R2-tmpclean");
+        let tmp = tmp_dir_for(&final_dir);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("stale"), "x").unwrap();
+        write_atomic_dir(&final_dir, &sample_lines(), &GaijiMap::default()).unwrap();
+        assert!(final_dir.is_dir());
+        assert!(!tmp.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn ram_stores_meta_fields() {
         let (index, fields) = create_ram_index().expect("ram");
         let mut writer = index.writer(15_000_000).expect("writer");

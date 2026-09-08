@@ -90,3 +90,100 @@ pub fn collect_hits(
     }
     Ok(hits)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hit(work: &str, author: &str, title: &str, juan: u64) -> Hit {
+        Hit {
+            line_id: "L".into(),
+            work_id: work.into(),
+            title: title.into(),
+            author: author.into(),
+            juan,
+            text_raw: "t".into(),
+            citation: "c".into(),
+            score: 1.0,
+            cbeta_tag: "2026R2".into(),
+        }
+    }
+
+    #[test]
+    fn passes_filters_all_axes() {
+        let h = hit("T1578", "清辯菩薩,玄奘", "大乘掌珍論", 1);
+        assert!(passes_filters(&h, &Filters::default()));
+        assert!(!passes_filters(
+            &h,
+            &Filters {
+                works: vec!["T0235".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(passes_filters(
+            &h,
+            &Filters {
+                works: vec!["T1578".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(!passes_filters(
+            &h,
+            &Filters {
+                authors: vec!["羅什".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(passes_filters(
+            &h,
+            &Filters {
+                authors: vec!["玄奘".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(!passes_filters(
+            &h,
+            &Filters {
+                titles: vec!["金剛".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(passes_filters(
+            &h,
+            &Filters {
+                titles: vec!["掌珍".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(!passes_filters(
+            &h,
+            &Filters {
+                juans: vec![2],
+                ..Filters::default()
+            }
+        ));
+        assert!(passes_filters(
+            &h,
+            &Filters {
+                juans: vec![1],
+                ..Filters::default()
+            }
+        ));
+        assert!(!passes_filters(
+            &h,
+            &Filters {
+                canons: vec!["X".into()],
+                ..Filters::default()
+            }
+        ));
+        assert!(passes_filters(
+            &h,
+            &Filters {
+                canons: vec!["T".into()],
+                types: vec!["lun".into()],
+                categories: vec!["x".into()],
+                ..Filters::default()
+            }
+        ));
+    }
+}
