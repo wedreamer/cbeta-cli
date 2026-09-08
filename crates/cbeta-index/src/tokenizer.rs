@@ -75,11 +75,7 @@ fn build_tokens(text: &str) -> Vec<Token> {
         for gram in 1..=max_gram {
             let end = start + gram;
             let offset_from = chars[start].0;
-            let offset_to = if end < n {
-                chars[end].0
-            } else {
-                text.len()
-            };
+            let offset_to = if end < n { chars[end].0 } else { text.len() };
             let piece: String = chars[start..end].iter().map(|(_, c)| *c).collect();
             tokens.push(Token {
                 offset_from,
@@ -103,10 +99,7 @@ mod tests {
         // When: tokenize
         // Then: successive unigrams sit at positions 0,1,2
         let tokens = tokenize_all("真性有");
-        let unigrams: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.position_length == 1)
-            .collect();
+        let unigrams: Vec<_> = tokens.iter().filter(|t| t.position_length == 1).collect();
         assert_eq!(unigrams.len(), 3);
         assert_eq!(unigrams[0].text, "真");
         assert_eq!(unigrams[0].position, 0);
@@ -132,10 +125,7 @@ mod tests {
     #[test]
     fn bigram_shares_start_char_position() {
         let tokens = tokenize_all("空性");
-        let bi = tokens
-            .iter()
-            .find(|t| t.text == "空性")
-            .expect("bigram");
+        let bi = tokens.iter().find(|t| t.text == "空性").expect("bigram");
         assert_eq!(bi.position, 0);
         assert_eq!(bi.position_length, 2);
         assert_eq!(bi.offset_from, 0);
