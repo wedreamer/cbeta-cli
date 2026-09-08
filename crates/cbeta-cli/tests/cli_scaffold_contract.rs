@@ -38,7 +38,12 @@ fn json_dumps_command_not_hits() {
         .args(["build", "--scope", "ci-minimal"])
         .output()
         .expect("build");
-    assert_eq!(build.status.code(), Some(0), "build failed: {}", String::from_utf8_lossy(&build.stderr));
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
 
     let out = cbeta_env(&corpus, &index)
         .args(["search", "--json", "真性有为空"])
@@ -133,13 +138,12 @@ fn search_fullwidth_exits_2() {
 
 #[test]
 fn catalog_json_dumps_command() {
-    // Scaffold dump only: parent --json must precede subcommand (not product protocol).
+    // Scaffold dump only until catalog product wire.
     let out = cbeta()
         .args(["--json", "catalog"])
         .output()
         .expect("spawn --json catalog");
     assert_eq!(out.status.code(), Some(0));
-
     let cmd: cbeta_core::Command =
         serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
     assert_eq!(cmd.action, cbeta_core::Action::Catalog);
@@ -147,13 +151,12 @@ fn catalog_json_dumps_command() {
 
 #[test]
 fn info_json_dumps_command() {
-    // Scaffold dump only: parent --json must precede subcommand (not product protocol).
+    // Scaffold dump only until info product wire.
     let out = cbeta()
         .args(["--json", "info"])
         .output()
         .expect("spawn --json info");
     assert_eq!(out.status.code(), Some(0));
-
     let cmd: cbeta_core::Command =
         serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
     assert_eq!(cmd.action, cbeta_core::Action::Info);
@@ -217,45 +220,80 @@ fn verify_json_dumps_command() {
 
 #[test]
 fn get_json_dumps_command() {
-    // Scaffold dump only: parent --json precedes get.
-    let out = cbeta()
-        .args(["--json", "get", "T31n1585_p0001a12"])
+    // Product: get known line_id against mini index → {hit: ...}.
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("get-json");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
+        .args(["--json", "get", "T30n1578_p0268b21"])
         .output()
-        .expect("spawn --json get");
-    assert_eq!(out.status.code(), Some(0));
+        .expect("get");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["hit"]["line_id"], "T30n1578_p0268b21");
+    assert!(!v.as_object().unwrap().contains_key("action"));
+}
 
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Get);
+#[test]
+fn get_missing_line_id_exits_1() {
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("get-miss");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    // Ghost id must not be invented.
+    let out = cbeta_env(&corpus, &index)
+        .args(["get", "T30n1578_p0268a12"])
+        .output()
+        .expect("get miss");
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn get_json_has_no_parsed_query() {
-    // Given: get by line_id with --json
-    // When: CLI dumps Command
-    // Then: action=Get and parsed_query is absent (not run through parse_query)
-    let out = cbeta()
-        .args(["--json", "get", "T31n1585_p0001a12"])
+    // Product get JSON is {hit}, never Command / parsed_query.
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("get-noparse");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
+        .args(["--json", "get", "T30n1578_p0268b21"])
         .output()
-        .expect("spawn --json get");
+        .expect("get");
     assert_eq!(out.status.code(), Some(0));
-
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Get);
-    assert!(
-        cmd.parsed_query.is_none(),
-        "get must not run parse_query; got {:?}",
-        cmd.parsed_query
-    );
-
-    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
-    let obj = value.as_object().expect("JSON object");
-    assert!(
-        !obj.contains_key("parsed_query"),
-        "parsed_query must be skipped when None; keys={:?}",
-        obj.keys().collect::<Vec<_>>()
-    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    let obj = value.as_object().expect("object");
+    assert!(!obj.contains_key("parsed_query") && !obj.contains_key("action"));
+    assert!(obj.contains_key("hit"));
 }
 
 #[test]

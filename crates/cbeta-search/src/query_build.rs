@@ -9,7 +9,11 @@ use tantivy::schema::{IndexRecordOption, Term};
 use crate::error::Result;
 
 /// Build a Tantivy query. near/before = Boolean AND of terms (no char-span confirm in P0).
-pub fn build_query(parsed: &ParsedQuery, fields: &LineSchema, gaiji: &GaijiMap) -> Result<Box<dyn Query>> {
+pub fn build_query(
+    parsed: &ParsedQuery,
+    fields: &LineSchema,
+    gaiji: &GaijiMap,
+) -> Result<Box<dyn Query>> {
     let norms: Vec<String> = parsed
         .terms
         .iter()
@@ -46,7 +50,10 @@ fn term_or_phrase(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
     if chars.len() == 1 {
         let s: String = chars.iter().collect();
         let term = Term::from_field_text(fields.text_norm, &s);
-        return Box::new(TermQuery::new(term, IndexRecordOption::WithFreqsAndPositions));
+        return Box::new(TermQuery::new(
+            term,
+            IndexRecordOption::WithFreqsAndPositions,
+        ));
     }
     // Phrase of successive unigrams — tokenizer positions are char indices 0..n-1.
     let terms: Vec<Term> = chars
