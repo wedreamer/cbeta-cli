@@ -168,6 +168,7 @@ dependencies = [
  "cbeta-core",
  "cbeta-index",
  "cbeta-parse",
+ "cbeta-search",
  "clap",
  "serde",
  "serde_json",
@@ -208,7 +209,10 @@ name = "cbeta-search"
 version = "0.1.0"
 dependencies = [
  "cbeta-core",
+ "cbeta-index",
+ "cbeta-parse",
  "serde",
+ "tantivy",
  "thiserror 1.0.69",
 ]
 

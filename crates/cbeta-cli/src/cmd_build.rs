@@ -169,7 +169,7 @@ fn write_sidecar(
     catalog: &[CatalogRow],
     catalog_src: &Path,
 ) -> Result<(), String> {
-    let meta_path = art.join("meta.json");
+    let meta_path = art.join("cbeta-meta.json");
     let mut meta = serde_json::to_value(info).map_err(|e| e.to_string())?;
     if let Some(obj) = meta.as_object_mut() {
         obj.insert(
@@ -178,7 +178,7 @@ fn write_sidecar(
         );
     }
     let meta_s = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
-    fs::write(&meta_path, meta_s).map_err(|e| format!("write meta.json: {e}"))?;
+    fs::write(&meta_path, meta_s).map_err(|e| format!("write cbeta-meta.json: {e}"))?;
 
     let man_src = catalog_src
         .parent()

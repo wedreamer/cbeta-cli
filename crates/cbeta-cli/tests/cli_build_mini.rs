@@ -37,7 +37,7 @@ fn build_ci_minimal_exits_0_and_writes_index() {
             .unwrap_or_default()
     );
     assert!(
-        artifact.join("meta.json").is_file() || artifact.join("MANIFEST.json").is_file(),
+        artifact.join("cbeta-meta.json").is_file() || artifact.join("MANIFEST.json").is_file(),
         "expected meta/MANIFEST sidecar in artifact"
     );
 }

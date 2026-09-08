@@ -1,43 +1,60 @@
-//! Tier-P product boundary: after L-search, `search --json` emits Hits, not Command.
-//! Kept `#[ignore = "L-search"]` so default CI/`cargo test` skips it; run with
-//! `--ignored` to prove today's scaffold still dumps Command (this test must fail).
+//! Product boundary: `search --json` emits Hits with real mini-index data.
 
-use std::process::Command;
+mod common;
+
+use common::{cbeta_env, mini_corpus, temp_dir};
 
 #[test]
-#[ignore = "L-search"]
 fn json_search_emits_hits_not_command() {
-    // Given: current scaffold — `--json` pretty-prints `cbeta_core::Command`, not Hits.
-    // When: product search JSON for a simple query.
-    let output = Command::new(env!("CARGO_BIN_EXE_cbeta"))
-        .args(["search", "--json", "空性"])
+    // Given: mini corpus built into a temp index
+    let corpus = mini_corpus();
+    let index = temp_dir("product-hits");
+    let build = cbeta_env(&corpus, &index)
+        .args(["build", "--scope", "ci-minimal"])
+        .output()
+        .expect("build");
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    // When: simplified query 真性有为空
+    let output = cbeta_env(&corpus, &index)
+        .args(["search", "--json", "真性有为空"])
         .output()
         .expect("spawn cbeta");
 
     let stdout = String::from_utf8(output.stdout).expect("stdout utf-8");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(
-        output.status.success(),
-        "search --json should exit 0; status={:?} stderr={stderr}",
-        output.status
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "search --json should exit 0; stderr={stderr} stdout={stdout}"
     );
 
-    // Then: future product shape is a JSON object with a top-level `hits` key.
-    // Do NOT treat deserializing as Command as success — that passes on today's scaffold.
     assert!(
         json_object_has_key(&stdout, "hits"),
-        "expected Hits JSON with top-level `hits`; got Command-shaped dump:\n{stdout}"
+        "expected Hits JSON with top-level `hits`; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("T30n1578_p0268b21"),
+        "expected line_id T30n1578_p0268b21 in hits; got:\n{stdout}"
+    );
+    assert!(
+        !json_object_has_key(&stdout, "action"),
+        "must not dump Command; got:\n{stdout}"
     );
 }
 
-/// Std-only top-level object key probe (integration crate has no serde_json dep).
+/// Std-only top-level object key probe.
 fn json_object_has_key(json: &str, key: &str) -> bool {
     let trimmed = json.trim();
     if !trimmed.starts_with('{') {
         return false;
     }
-    // serde_json compact (`"hits":`) or spaced (`"hits" :`) member form.
     let compact = format!("\"{key}\":");
     let spaced = format!("\"{key}\" :");
     trimmed.contains(&compact) || trimmed.contains(&spaced)

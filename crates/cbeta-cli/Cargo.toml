@@ -13,6 +13,7 @@ path = "src/main.rs"
 cbeta-core.workspace = true
 cbeta-parse.workspace = true
 cbeta-index.workspace = true
+cbeta-search.workspace = true
 clap.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
