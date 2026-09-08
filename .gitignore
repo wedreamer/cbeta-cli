@@ -2,3 +2,7 @@
 **/*.rs.bk
 .DS_Store
 .omo/
+
+# gemini-cli (T9)
+.gemini/
+gha-creds-*.json
