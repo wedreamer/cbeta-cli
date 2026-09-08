@@ -9,3 +9,6 @@ description = "Lexical / proximity / verify search over a CBETA index"
 cbeta-core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

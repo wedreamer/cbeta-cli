@@ -9,3 +9,6 @@ description = "Shared Command / Hit / Filters types for cbeta-cli"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

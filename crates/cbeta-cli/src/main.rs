@@ -93,6 +93,8 @@ fn main() {
     };
 
     if json || explain {
+        // Command is our own Serialize types; serde_json pretty-print cannot fail here.
+        #[allow(clippy::expect_used)]
         if json {
             println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
         } else if let Some(p) = &cmd.parsed_query {

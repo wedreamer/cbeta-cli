@@ -8,3 +8,6 @@ description = "Tantivy index builder for CBETA scopes"
 [dependencies]
 cbeta-core.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true
