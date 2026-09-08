@@ -10,7 +10,7 @@ use cbeta_search::active_artifact;
 use crate::env_paths::{corpus_root, index_root};
 use crate::scope_io::{read_json, CatalogRow, ScopeManifest};
 
-/// Exit 0 ok / 2 missing catalog or index meta.
+/// Exit 0 hits / 1 no match / 2 missing catalog or index meta.
 pub fn run_catalog(cmd: &Command) -> i32 {
     match load_catalog_entries(&cmd.filters) {
         Ok(entries) => {
@@ -30,7 +30,11 @@ pub fn run_catalog(cmd: &Command) -> i32 {
                     );
                 }
             }
-            0
+            if entries.is_empty() {
+                1
+            } else {
+                0
+            }
         }
         Err(e) => {
             eprintln!("{e}");
@@ -216,8 +220,8 @@ fn read_catalog_rows(path: &Path) -> Result<Vec<CatalogRow>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cbeta_core::{Action, Filters, Format};
     use crate::env_paths::env_lock;
+    use cbeta_core::{Action, Filters, Format};
 
     fn mini_corpus() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
@@ -294,7 +298,7 @@ mod tests {
             works: vec!["NOPE".into()],
             ..Filters::default()
         };
-        assert_eq!(run_catalog(&cmd), 0);
+        assert_eq!(run_catalog(&cmd), 1);
 
         cmd.action = Action::Info;
         cmd.filters = Filters::default();
