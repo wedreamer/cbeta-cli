@@ -290,26 +290,17 @@ mod tests {
     #[test]
     fn parse_error_display_contains_fullwidth() {
         let err = parse_query("空性＋缘生").unwrap_err();
-        assert!(
-            err.to_string().contains("fullwidth"),
-            "Display was: {err}"
-        );
+        assert!(err.to_string().contains("fullwidth"), "Display was: {err}");
     }
 
     #[test]
     fn action_read_cite_serde_roundtrip() {
-        assert_eq!(
-            serde_json::to_string(&Action::Read).unwrap(),
-            "\"read\""
-        );
+        assert_eq!(serde_json::to_string(&Action::Read).unwrap(), "\"read\"");
         assert_eq!(
             serde_json::from_str::<Action>("\"read\"").unwrap(),
             Action::Read
         );
-        assert_eq!(
-            serde_json::to_string(&Action::Cite).unwrap(),
-            "\"cite\""
-        );
+        assert_eq!(serde_json::to_string(&Action::Cite).unwrap(), "\"cite\"");
         assert_eq!(
             serde_json::from_str::<Action>("\"cite\"").unwrap(),
             Action::Cite
@@ -318,18 +309,12 @@ mod tests {
 
     #[test]
     fn format_plain_jsonl_serde_snake_case() {
-        assert_eq!(
-            serde_json::to_string(&Format::Plain).unwrap(),
-            "\"plain\""
-        );
+        assert_eq!(serde_json::to_string(&Format::Plain).unwrap(), "\"plain\"");
         assert_eq!(
             serde_json::from_str::<Format>("\"plain\"").unwrap(),
             Format::Plain
         );
-        assert_eq!(
-            serde_json::to_string(&Format::Jsonl).unwrap(),
-            "\"jsonl\""
-        );
+        assert_eq!(serde_json::to_string(&Format::Jsonl).unwrap(), "\"jsonl\"");
         assert_eq!(
             serde_json::from_str::<Format>("\"jsonl\"").unwrap(),
             Format::Jsonl
