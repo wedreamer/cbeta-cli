@@ -131,4 +131,16 @@ mod tests {
         assert_eq!(bi.offset_from, 0);
         assert_eq!(bi.offset_to, "空性".len());
     }
+
+    #[test]
+    fn token_mut_and_empty_input() {
+        let mut tok = CjkNgramTokenizer;
+        let mut stream = tok.token_stream("空");
+        assert!(stream.advance());
+        stream.token_mut().position = 9;
+        assert_eq!(stream.token().position, 9);
+        while stream.advance() {}
+        assert!(!stream.advance());
+        assert!(tokenize_all("").is_empty());
+    }
 }

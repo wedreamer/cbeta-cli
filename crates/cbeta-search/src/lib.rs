@@ -108,4 +108,64 @@ mod tests {
         assert!(miss.is_none());
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn ram_near_and_before_and_filters() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-near-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        write_artifact(&dir, "2026R2", "nearh", &sample(), &GaijiMap::default()).unwrap();
+        fs::write(dir.join("CURRENT"), "2026R2-nearh\n").unwrap();
+
+        let near = cbeta_core::parse_query("真性+有為").expect("near");
+        assert_eq!(near.mode, "near");
+        let hits = search(&dir, &near, &Filters::default(), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+
+        let before = cbeta_core::parse_query("真性*有為").expect("before");
+        assert_eq!(before.mode, "before");
+        let hits2 = search(&dir, &before, &Filters::default(), 10).unwrap();
+        assert!(!hits2.is_empty());
+
+        let filtered = search(
+            &dir,
+            &near,
+            &Filters {
+                works: vec!["T0235".into()],
+                ..Filters::default()
+            },
+            10,
+        )
+        .unwrap();
+        assert!(filtered.is_empty());
+
+        assert!(search(&dir, &near, &Filters::default(), 0).is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_errors_without_index() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-empty-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let pq = cbeta_core::parse_query("空").unwrap();
+        assert!(matches!(
+            search(&dir, &pq, &Filters::default(), 5),
+            Err(Error::NoIndex(_))
+        ));
+        assert!(matches!(get_line(&dir, "x"), Err(Error::NoIndex(_))));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

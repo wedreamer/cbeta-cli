@@ -66,3 +66,75 @@ fn term_or_phrase(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
         .collect();
     Box::new(PhraseQuery::new(terms))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cbeta_core::ParsedQuery;
+    use cbeta_index::build_line_schema;
+    use cbeta_parse::GaijiMap;
+
+    fn fields() -> cbeta_index::LineSchema {
+        build_line_schema()
+    }
+
+    #[test]
+    fn empty_norms_falls_back_to_raw() {
+        let pq = ParsedQuery {
+            raw: "空".into(),
+            mode: "keyword".into(),
+            terms: vec![String::new()],
+            within_chars: None,
+            wildcard: None,
+        };
+        let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+        let _ = q;
+    }
+
+    #[test]
+    fn near_and_before_build_boolean_and() {
+        for mode in ["near", "before"] {
+            let pq = ParsedQuery {
+                raw: "a+b".into(),
+                mode: mode.into(),
+                terms: vec!["空".into(), "性".into()],
+                within_chars: Some(30),
+                wildcard: None,
+            };
+            let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+            let _ = q;
+        }
+    }
+
+    #[test]
+    fn unknown_mode_uses_first_term() {
+        let pq = ParsedQuery {
+            raw: "x".into(),
+            mode: "fuzzy".into(),
+            terms: vec!["空性".into()],
+            within_chars: None,
+            wildcard: None,
+        };
+        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+    }
+
+    #[test]
+    fn term_or_phrase_empty_and_single_char() {
+        let f = fields();
+        let _ = term_or_phrase("", &f);
+        let _ = term_or_phrase("空", &f);
+        let _ = term_or_phrase("空性", &f);
+    }
+
+    #[test]
+    fn keyword_mode_phrase() {
+        let pq = ParsedQuery {
+            raw: "真性有為空".into(),
+            mode: "keyword".into(),
+            terms: vec!["真性有為空".into()],
+            within_chars: None,
+            wildcard: None,
+        };
+        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+    }
+}
