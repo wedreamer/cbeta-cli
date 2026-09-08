@@ -7,8 +7,11 @@ description = "Lexical / proximity / verify search over a CBETA index"
 
 [dependencies]
 cbeta-core.workspace = true
+cbeta-parse.workspace = true
+cbeta-index.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tantivy.workspace = true
 
 [lints]
 workspace = true

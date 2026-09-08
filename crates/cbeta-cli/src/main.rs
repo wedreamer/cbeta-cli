@@ -3,6 +3,7 @@
 mod citation;
 mod cli_args;
 mod cmd_build;
+mod cmd_search;
 mod env_paths;
 mod scope_io;
 
@@ -42,18 +43,22 @@ fn main() {
     // Product handlers first; remaining actions stay scaffold (Command dump / exit 2).
     match cmd.action {
         Action::Build => std::process::exit(cmd_build::run(&cmd)),
-        Action::Search if cmd.explain && !out.json => {
-            if let Some(p) = &cmd.parsed_query {
+        // --explain (± --json): parse dump only, never hits.
+        Action::Search if cmd.explain => {
+            if out.json {
+                #[allow(clippy::expect_used)]
+                {
+                    println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
+                }
+            } else if let Some(p) = &cmd.parsed_query {
                 println!(
                     "mode={} terms={:?} within={:?}",
                     p.mode, p.terms, p.within_chars
                 );
             }
         }
-        Action::Search | Action::Verify | Action::Get | Action::Catalog | Action::Info
-            if out.json || cmd.explain =>
-        {
-            // Command is our own Serialize types; serde_json pretty-print cannot fail here.
+        Action::Search => std::process::exit(cmd_search::run(&cmd)),
+        Action::Verify | Action::Get | Action::Catalog | Action::Info if out.json => {
             #[allow(clippy::expect_used)]
             {
                 println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));

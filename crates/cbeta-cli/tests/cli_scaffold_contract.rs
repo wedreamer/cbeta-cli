@@ -16,31 +16,52 @@ fn help_exits_0() {
 
 #[test]
 fn bare_search_exits_2() {
-    // No --json / --explain: scaffold reports missing index and exits 2.
-    let out = cbeta().arg("色即是空").output().expect("spawn bare search");
+    // No index (isolated env): search reports missing index and exits 2.
+    use common::{cbeta_env, temp_dir};
+    let index = temp_dir("no-idx");
+    let corpus = temp_dir("no-corpus");
+    let out = cbeta_env(&corpus, &index)
+        .arg("色即是空")
+        .output()
+        .expect("spawn bare search");
     assert_eq!(out.status.code(), Some(2));
 }
 
 #[test]
 fn json_dumps_command_not_hits() {
-    let out = cbeta()
-        .args(["search", "--json", "空性"])
+    // Product: search --json emits top-level hits (build mini index first).
+    use common::{cbeta_env, mini_corpus, temp_dir};
+
+    let corpus = mini_corpus();
+    let index = temp_dir("search-json");
+    let build = cbeta_env(&corpus, &index)
+        .args(["build", "--scope", "ci-minimal"])
+        .output()
+        .expect("build");
+    assert_eq!(build.status.code(), Some(0), "build failed: {}", String::from_utf8_lossy(&build.stderr));
+
+    let out = cbeta_env(&corpus, &index)
+        .args(["search", "--json", "真性有为空"])
         .output()
         .expect("spawn search --json");
-    assert_eq!(out.status.code(), Some(0));
-
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Search);
-    assert_eq!(cmd.q.as_deref(), Some("空性"));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "search hits exit 0; stdout={stdout} stderr={stderr}"
+    );
 
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
     let obj = value.as_object().expect("JSON object");
     assert!(
-        !obj.contains_key("hits"),
-        "scaffold --json dumps Command, not hits; keys={:?}",
+        obj.contains_key("hits"),
+        "expected top-level hits; keys={:?}",
         obj.keys().collect::<Vec<_>>()
     );
+    let hits = obj["hits"].as_array().expect("hits array");
+    assert!(!hits.is_empty(), "expected at least one hit");
+    assert_eq!(hits[0]["line_id"], "T30n1578_p0268b21");
 }
 
 #[test]
@@ -82,7 +103,7 @@ fn explain_json_still_command() {
 #[test]
 fn canon_filter_json() {
     let out = cbeta()
-        .args(["search", "--json", "--canon", "T", "空性"])
+        .args(["search", "--explain", "--json", "--canon", "T", "空性"])
         .output()
         .expect("spawn search --json --canon");
     assert_eq!(out.status.code(), Some(0));
@@ -290,7 +311,14 @@ fn author_type_flags_json() {
     // Then: filters.authors and filters.types carry the flag values
     let out = cbeta()
         .args([
-            "search", "--json", "--author", "玄奘", "--type", "lun", "空性",
+            "search",
+            "--explain",
+            "--json",
+            "--author",
+            "玄奘",
+            "--type",
+            "lun",
+            "空性",
         ])
         .output()
         .expect("spawn search --json --author --type");
