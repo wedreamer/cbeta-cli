@@ -203,4 +203,89 @@ mod tests {
     fn reject_fullwidth_plus() {
         assert!(parse_query("空性＋缘生").is_err());
     }
+
+    #[test]
+    fn star_is_before_30() {
+        let p = parse_query("空性*缘生").unwrap();
+        assert_eq!(p.mode, "before");
+        assert_eq!(p.within_chars, Some(30));
+        assert_eq!(p.terms, vec!["空性", "缘生"]);
+    }
+
+    #[test]
+    fn keyword_plain() {
+        let p = parse_query("色即是空").unwrap();
+        assert_eq!(p.mode, "keyword");
+    }
+
+    #[test]
+    fn reject_fullwidth_ops() {
+        // Fullwidth set: — ＋ ＊ ＆ ？ (＋ covered by reject_fullwidth_plus).
+        // Fullwidth comma ， is intentionally not locked here.
+        for q in ["空性—缘生", "空性＊缘生", "空性＆缘生", "空性？缘生"] {
+            assert!(parse_query(q).is_err(), "expected reject for {q}");
+        }
+    }
+
+    #[test]
+    fn parse_error_display_contains_fullwidth() {
+        let err = parse_query("空性＋缘生").unwrap_err();
+        assert!(
+            err.to_string().contains("fullwidth"),
+            "Display was: {err}"
+        );
+    }
+
+    #[test]
+    fn action_read_cite_serde_roundtrip() {
+        assert_eq!(
+            serde_json::to_string(&Action::Read).unwrap(),
+            "\"read\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Action>("\"read\"").unwrap(),
+            Action::Read
+        );
+        assert_eq!(
+            serde_json::to_string(&Action::Cite).unwrap(),
+            "\"cite\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Action>("\"cite\"").unwrap(),
+            Action::Cite
+        );
+    }
+
+    #[test]
+    fn format_plain_jsonl_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&Format::Plain).unwrap(),
+            "\"plain\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Format>("\"plain\"").unwrap(),
+            Format::Plain
+        );
+        assert_eq!(
+            serde_json::to_string(&Format::Jsonl).unwrap(),
+            "\"jsonl\""
+        );
+        assert_eq!(
+            serde_json::from_str::<Format>("\"jsonl\"").unwrap(),
+            Format::Jsonl
+        );
+    }
+
+    #[test]
+    fn hit_constructs_with_line_id() {
+        let hit = Hit {
+            line_id: "T31n1585_p0001a12".into(),
+            work_id: "T1585".into(),
+            title: "成唯識論".into(),
+            text_raw: "色即是空".into(),
+            citation: "(CBETA 2026.R2, T31, no. 1585, p. 1, a12)".into(),
+            score: 1.0,
+        };
+        assert_eq!(hit.line_id, "T31n1585_p0001a12");
+    }
 }
