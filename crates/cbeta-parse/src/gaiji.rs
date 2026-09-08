@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 
 /// Lookup table from CBETA gaiji code (or placeholder key) to Unicode.
+///
+/// Callers inject a map; this crate does not read xml-p5 dictionaries.
 #[derive(Debug, Clone, Default)]
 pub struct GaijiMap {
     map: HashMap<String, String>,
@@ -23,7 +25,8 @@ impl GaijiMap {
         Self { map }
     }
 
-    /// Resolve one gaiji key. Missing → same-width `□`.
+    /// Resolve one gaiji key. Missing keys become a same-width placeholder `□`
+    /// so character slots are never dropped.
     pub fn resolve(&self, key: &str) -> String {
         self.map
             .get(key)
@@ -31,7 +34,7 @@ impl GaijiMap {
             .unwrap_or_else(|| "□".to_string())
     }
 
-    /// Replace known keys in `text`.
+    /// Replace each `key` occurrence in `text` with its resolved form.
     pub fn apply(&self, text: &str) -> String {
         let mut out = text.to_string();
         for (key, val) in &self.map {

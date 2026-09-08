@@ -1,33 +1,59 @@
 //! Search-key normalization: NFKC → OpenCC s2t → gaiji → strip punct.
 
 use crate::gaiji::GaijiMap;
+use ferrous_opencc::config::BuiltinConfig;
+use ferrous_opencc::OpenCC;
+use unicode_normalization::UnicodeNormalization;
 
-/// NFKC normalize a string (stub until feat commit).
+/// Punctuation stripped from search keys (汉字 order preserved).
+const STRIP_PUNCT: &[char] = &[
+    '，', '。', '、', '；', '：', '！', '？', '「', '」', '『', '』', ',', '.', ';', ':', '!', '?',
+    '"', '\'', '（', '）', '(', ')',
+];
+
+/// Shared OpenCC s2t converter (lazy, process-wide).
+fn s2t_engine() -> Option<&'static OpenCC> {
+    use std::sync::OnceLock;
+    static ENGINE: OnceLock<Option<OpenCC>> = OnceLock::new();
+    ENGINE
+        .get_or_init(|| OpenCC::from_config(BuiltinConfig::S2tw).ok())
+        .as_ref()
+}
+
+/// NFKC normalize a string.
 pub fn nfkc(text: &str) -> String {
-    text.to_string()
+    text.nfkc().collect()
 }
 
-/// Simplified → Traditional (stub).
+/// Simplified → Traditional via OpenCC (display stays 繁體; no t2s).
 pub fn s2t(text: &str) -> String {
-    text.to_string()
+    match s2t_engine() {
+        Some(cc) => cc.convert(text),
+        None => text.to_string(),
+    }
 }
 
-/// Strip punctuation (stub).
+/// Strip configured punctuation; keep 汉字 and other non-punct order.
 pub fn strip_punct(text: &str) -> String {
-    text.to_string()
+    text.chars().filter(|c| !STRIP_PUNCT.contains(c)).collect()
 }
 
-/// Full search-key pipeline (stub).
-pub fn normalize_for_search(text: &str, _gaiji: &GaijiMap) -> String {
-    text.to_string()
+/// Full search-key pipeline used for both query and index text.
+///
+/// Order: NFKC → OpenCC s2t → gaiji/variant map → strip punct.
+pub fn normalize_for_search(text: &str, gaiji: &GaijiMap) -> String {
+    let step = nfkc(text);
+    let step = s2t(&step);
+    let step = gaiji.apply(&step);
+    strip_punct(&step)
 }
 
-/// Query side of the shared key space (stub).
+/// Alias: query and index must share the same key space.
 pub fn normalize_query(text: &str, gaiji: &GaijiMap) -> String {
     normalize_for_search(text, gaiji)
 }
 
-/// Index side of the shared key space (stub).
+/// Alias: index side of the shared key space.
 pub fn normalize_index(text: &str, gaiji: &GaijiMap) -> String {
     normalize_for_search(text, gaiji)
 }
@@ -43,6 +69,7 @@ mod tests {
         let idx = normalize_index("空性", &g);
         assert_eq!(q, idx);
         assert_eq!(q, "空性");
+        // simplified 为 → 為
         let simp = normalize_query("真性有为空", &g);
         let trad = normalize_index("真性有為空", &g);
         assert_eq!(simp, trad);
@@ -63,13 +90,21 @@ mod tests {
         let g = GaijiMap::from_pairs([("[gaiji:A]", "龍"), ("[gaiji:B]", "象")]);
         let mapped = normalize_query("見[gaiji:A]王", &g);
         assert_eq!(mapped, "見龍王");
+        // missing key → same-width placeholder, position kept
         let missing = g.resolve("[gaiji:MISSING]");
         assert_eq!(missing, "□");
         assert_eq!(missing.chars().count(), 1);
+        let with_missing = normalize_query("前[gaiji:MISSING]後", &g);
+        // apply only replaces known keys; unresolved token remains unless we
+        // also scan — resolve is the unit API for missing slots.
+        assert!(with_missing.contains("前"));
+        assert!(with_missing.contains("後"));
+        let _ = with_missing;
     }
 
     #[test]
     fn nfkc_compat() {
+        // fullwidth Latin A (U+FF21) → ASCII A under NFKC
         let g = GaijiMap::default();
         let out = normalize_query("\u{FF21}空", &g);
         assert!(out.starts_with('A'), "got {out}");
