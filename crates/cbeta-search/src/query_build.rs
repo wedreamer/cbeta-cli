@@ -86,6 +86,10 @@ mod tests {
             terms: vec![String::new()],
             within_chars: None,
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         };
         let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
         let _ = q;
@@ -100,6 +104,10 @@ mod tests {
                 terms: vec!["空".into(), "性".into()],
                 within_chars: Some(30),
                 wildcard: None,
+                ordered: None,
+                clauses: vec![],
+                boolean_op: None,
+                not_terms: vec![],
             };
             let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
             let _ = q;
@@ -114,6 +122,10 @@ mod tests {
             terms: vec!["空性".into()],
             within_chars: None,
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         };
         let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
     }
@@ -134,6 +146,10 @@ mod tests {
             terms: vec!["真性有為空".into()],
             within_chars: None,
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         };
         let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
     }
@@ -146,6 +162,10 @@ mod tests {
             terms: vec!["缘生故如幻".into()],
             within_chars: None,
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         };
         let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
     }

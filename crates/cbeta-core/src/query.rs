@@ -13,12 +13,25 @@ impl std::fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
+/// One clause in a structured near/before/boolean query.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Clause {
+    /// Clause text (pre-normalization display form from the DSL).
+    pub text: String,
+    /// Optional per-clause window (normalized 汉字).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub within_chars: Option<u32>,
+    /// Optional per-clause order constraint (`true` = before).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordered: Option<bool>,
+}
+
 /// Structured view of a human/agent query string after [`parse_query`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedQuery {
     /// Original trimmed input.
     pub raw: String,
-    /// DSL mode: `keyword`, `near`, `before`, or `wildcard`.
+    /// DSL mode: `keyword`, `near`, `before`, `wildcard`, or `boolean`.
     pub mode: String,
     /// Term list derived from the DSL (order preserved).
     pub terms: Vec<String>,
@@ -28,18 +41,31 @@ pub struct ParsedQuery {
     /// Set when `?` single-char wildcard mode is active.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wildcard: Option<bool>,
+    /// Near/before order: `Some(false)` near, `Some(true)` before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordered: Option<bool>,
+    /// Structured clauses mirrored from [`Self::terms`] (near/before/boolean).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clauses: Vec<Clause>,
+    /// Boolean combinator when `mode == "boolean"`: `and` or `or`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boolean_op: Option<String>,
+    /// Terms excluded by CBReader `-` NOT.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_terms: Vec<String>,
 }
 
 /// Parse CBReader-style query DSL into a [`ParsedQuery`].
 ///
 /// Distance is always **normalized 汉字**, never tokens. Operators:
-/// - `+` → `near` with window 30
-/// - `*` → `before` with window 30
-/// - `NEAR/N` / `BEFORE/N` → ordered window `N`
+/// - `+` → `near` with window 30, `ordered = false`
+/// - `*` → `before` with window 30, `ordered = true`
+/// - `NEAR/N` / `BEFORE/N` → window `N` with matching ordered flag
+/// - `&` → `boolean` / `and`; `,` → `boolean` / `or`; `-` → `not_terms`
 /// - `?` → single-char wildcard mode
 ///
 /// Fullwidth operators in the reject set `—＋＊＆？` error out (halfwidth only).
-/// Fullwidth comma `，` is **not** rejected.
+/// Fullwidth comma `，` is **not** rejected. Mixing `&` and `,` is a [`ParseError`].
 pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
     let raw = q.trim().to_string();
     if raw.contains('—')
@@ -64,12 +90,17 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+        // RED scaffold: ordered/clauses filled in feat commit.
         return Ok(ParsedQuery {
             raw,
             mode: "near".into(),
             terms,
             within_chars: Some(30),
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         });
     }
     if raw.contains('*') && !raw.contains('?') {
@@ -84,8 +115,14 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
             terms,
             within_chars: Some(30),
             wildcard: None,
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         });
     }
+    // Boolean aliases: single operator among & / , ; - fills not_terms.
+    // Intentionally not implemented yet (RED tests).
     if raw.contains('?') {
         return Ok(ParsedQuery {
             raw: raw.clone(),
@@ -93,6 +130,10 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
             terms: vec![raw],
             within_chars: None,
             wildcard: Some(true),
+            ordered: None,
+            clauses: vec![],
+            boolean_op: None,
+            not_terms: vec![],
         });
     }
     Ok(ParsedQuery {
@@ -101,6 +142,10 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
         terms: vec![raw],
         within_chars: None,
         wildcard: None,
+        ordered: None,
+        clauses: vec![],
+        boolean_op: None,
+        not_terms: vec![],
     })
 }
 
@@ -117,6 +162,10 @@ fn parse_near_like(raw: &str, token: &str, mode: &str, _ordered: bool) -> Option
         terms: vec![left, right.trim().to_string()],
         within_chars: Some(within),
         wildcard: None,
+        ordered: None,
+        clauses: vec![],
+        boolean_op: None,
+        not_terms: vec![],
     })
 }
 
@@ -185,5 +234,91 @@ mod tests {
     fn parse_error_display_contains_fullwidth() {
         let err = parse_query("空性＋缘生").unwrap_err();
         assert!(err.to_string().contains("fullwidth"), "Display was: {err}");
+    }
+
+    // --- P1: ordered + clauses + boolean DSL (Given/When/Then) ---
+
+    #[test]
+    fn plus_near_fills_ordered_false_and_clauses() {
+        // Given: CBReader + near alias
+        // When: parse
+        let p = parse_query("空性+缘生").unwrap();
+        // Then: unordered near with two clauses
+        assert_eq!(p.ordered, Some(false));
+        assert_eq!(p.clauses.len(), 2);
+        assert_eq!(p.clauses[0].text, "空性");
+        assert_eq!(p.clauses[1].text, "缘生");
+        assert_eq!(p.clauses[0].within_chars, Some(30));
+        assert_eq!(p.clauses[0].ordered, Some(false));
+    }
+
+    #[test]
+    fn star_before_fills_ordered_true_and_clauses() {
+        // Given: * before alias
+        let p = parse_query("空性*缘生").unwrap();
+        // Then
+        assert_eq!(p.ordered, Some(true));
+        assert_eq!(p.mode, "before");
+        assert_eq!(p.clauses.len(), 2);
+        assert_eq!(p.clauses[1].ordered, Some(true));
+    }
+
+    #[test]
+    fn near_n_fills_ordered_false_window_on_clauses() {
+        // Given: NEAR/16
+        let p = parse_query("真如 NEAR/16 缘起").unwrap();
+        // Then
+        assert_eq!(p.ordered, Some(false));
+        assert_eq!(p.within_chars, Some(16));
+        assert_eq!(p.clauses.len(), 2);
+        assert_eq!(p.clauses[0].text, "真如");
+        assert_eq!(p.clauses[1].within_chars, Some(16));
+    }
+
+    #[test]
+    fn before_n_fills_ordered_true() {
+        let p = parse_query("空性 BEFORE/8 缘起").unwrap();
+        assert_eq!(p.ordered, Some(true));
+        assert_eq!(p.clauses.len(), 2);
+        assert_eq!(p.clauses[0].ordered, Some(true));
+    }
+
+    #[test]
+    fn amp_is_boolean_and() {
+        // Given: CBReader &
+        let p = parse_query("佛陀&阿难").unwrap();
+        // Then
+        assert_eq!(p.mode, "boolean");
+        assert_eq!(p.boolean_op.as_deref(), Some("and"));
+        assert_eq!(p.terms, vec!["佛陀", "阿难"]);
+        assert_eq!(p.clauses.len(), 2);
+        assert!(p.not_terms.is_empty());
+    }
+
+    #[test]
+    fn comma_is_boolean_or() {
+        let p = parse_query("莲?色,莲花色").unwrap();
+        assert_eq!(p.mode, "boolean");
+        assert_eq!(p.boolean_op.as_deref(), Some("or"));
+        assert_eq!(p.terms, vec!["莲?色", "莲花色"]);
+    }
+
+    #[test]
+    fn dash_fills_not_terms() {
+        // Given: CBReader - EXCLUDE
+        let p = parse_query("佛陀-佛陀曰").unwrap();
+        // Then: positive term + not_terms
+        assert_eq!(p.mode, "boolean");
+        assert_eq!(p.terms, vec!["佛陀"]);
+        assert_eq!(p.not_terms, vec!["佛陀曰"]);
+        assert!(p.boolean_op.is_none() || p.boolean_op.as_deref() == Some("and"));
+    }
+
+    #[test]
+    fn mixed_amp_and_comma_is_parse_error() {
+        // Given: both & and ,
+        // When/Then: ParseError
+        assert!(parse_query("A&B,C").is_err());
+        assert!(parse_query("A,B&C").is_err());
     }
 }
