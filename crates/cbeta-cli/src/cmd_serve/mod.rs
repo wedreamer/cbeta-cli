@@ -59,3 +59,13 @@ async fn serve_stdio() -> Result<(), String> {
         .map_err(|e| format!("serve wait: {e}"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_http_branch_rejects_bare_port() {
+        assert_eq!(run(Some("1873")), 2);
+    }
+}

@@ -99,4 +99,35 @@ mod tests {
         assert!(h.iter().any(|x| x == "127.0.0.1:1873"));
         assert!(h.iter().any(|x| x == "localhost:1873"));
     }
+
+    #[test]
+    fn allowed_hosts_for_ipv6_loopback() {
+        let addr: SocketAddr = "[::1]:1873".parse().unwrap();
+        let h = allowed_hosts_for(addr);
+        assert!(h.iter().any(|x| x == "[::1]"));
+        assert!(h.iter().any(|x| x == "[::1]:1873"));
+        assert!(h.iter().any(|x| x == "::1"));
+        assert!(h.iter().any(|x| x == "localhost:1873"));
+    }
+
+    #[test]
+    fn bind_listener_ok_on_ephemeral() {
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let l = bind_listener(addr).unwrap();
+        assert!(l.local_addr().unwrap().port() > 0);
+    }
+
+    #[test]
+    fn parse_ipv6_bracket_form() {
+        let a = parse_http_addr("[::1]:0").unwrap();
+        assert!(a.is_ipv6());
+    }
+
+    #[test]
+    fn allowed_hosts_for_non_loopback_v4() {
+        let addr: SocketAddr = "10.0.0.5:9999".parse().unwrap();
+        let h = allowed_hosts_for(addr);
+        assert!(h.iter().any(|x| x == "10.0.0.5"));
+        assert!(h.iter().any(|x| x == "10.0.0.5:9999"));
+    }
 }
