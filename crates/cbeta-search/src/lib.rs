@@ -299,4 +299,36 @@ mod tests {
         assert_eq!(ids, vec!["T01n0001_p0001b01"]);
         let _ = fs::remove_dir_all(&dir);
     }
+
+    // Given 莲華色 / 莲花色 / 莲色 / 莲XY色,
+    // When 莲?色, Then only single-char middle hits.
+    #[test]
+    fn wildcard_single_char_confirm() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-wc-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        write_lines(
+            &dir,
+            "wc1",
+            &[
+                line("T01n0001_p0001c01", "T0001", "莲華色"),
+                line("T01n0001_p0001c02", "T0001", "莲花色"),
+                line("T01n0001_p0001c03", "T0001", "莲色"),
+                line("T01n0001_p0001c04", "T0001", "莲XY色"),
+            ],
+        );
+
+        let pq = cbeta_core::parse_query("莲?色").expect("parse");
+        assert_eq!(pq.mode, "wildcard");
+        let hits = search(&dir, &pq, &Filters::default(), 10).expect("search");
+        let mut ids: Vec<_> = hits.iter().map(|h| h.line_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["T01n0001_p0001c01", "T01n0001_p0001c02"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
