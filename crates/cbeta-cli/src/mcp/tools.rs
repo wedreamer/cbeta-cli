@@ -151,10 +151,9 @@ impl CbetaMcp {
         Parameters(args): Parameters<VerifyArgs>,
     ) -> Result<CallToolResult, McpError> {
         let index = self.index.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || handlers::run_verify(args.q, index))
-                .await
-                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let outcome = tokio::task::spawn_blocking(move || handlers::run_verify(args.q, index))
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(outcome_to_result(outcome))
     }
 
@@ -168,10 +167,9 @@ impl CbetaMcp {
         Parameters(args): Parameters<GetPassageArgs>,
     ) -> Result<CallToolResult, McpError> {
         let index = self.index.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || handlers::run_get_passage(args, index))
-                .await
-                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let outcome = tokio::task::spawn_blocking(move || handlers::run_get_passage(args, index))
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(outcome_to_result(outcome))
     }
 

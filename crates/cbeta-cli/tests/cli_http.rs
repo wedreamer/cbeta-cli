@@ -179,11 +179,9 @@ fn parse_listen_port(stderr: &str) -> Option<u16> {
 /// Minimal HTTP/1.1 POST; returns (status, body).
 fn http_post_json(port: u16, path: &str, body: &str) -> (u16, String) {
     let addr = format!("127.0.0.1:{port}");
-    let mut stream = TcpStream::connect_timeout(
-        &addr.parse().expect("socket addr"),
-        Duration::from_secs(2),
-    )
-    .unwrap_or_else(|e| panic!("connect {addr}: {e}"));
+    let mut stream =
+        TcpStream::connect_timeout(&addr.parse().expect("socket addr"), Duration::from_secs(2))
+            .unwrap_or_else(|e| panic!("connect {addr}: {e}"));
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .expect("read timeout");
@@ -223,10 +221,7 @@ fn parse_http_response(raw: &str) -> (u16, String) {
 
 fn assert_hit_product_fields(hit: &Value) {
     for key in HIT_KEYS {
-        assert!(
-            hit.get(key).is_some(),
-            "missing hit field `{key}` in {hit}"
-        );
+        assert!(hit.get(key).is_some(), "missing hit field `{key}` in {hit}");
     }
 }
 
@@ -316,10 +311,7 @@ fn post_search_matches_cli_json_hit_fields() {
 
     // When: bad JSON body
     let (bad_status, bad_resp) = http_post_json(port, "/search", "{not-json");
-    assert_eq!(
-        bad_status, 400,
-        "bad JSON must be 400; body={bad_resp}"
-    );
+    assert_eq!(bad_status, 400, "bad JSON must be 400; body={bad_resp}");
 }
 
 #[test]
@@ -338,10 +330,7 @@ fn thirty_two_concurrent_post_search_all_200() {
         let b = Arc::clone(&body);
         handles.push(thread::spawn(move || {
             let (status, resp) = http_post_json(port, "/search", &b);
-            assert_eq!(
-                status, 200,
-                "concurrent POST #{i} must be 200; body={resp}"
-            );
+            assert_eq!(status, 200, "concurrent POST #{i} must be 200; body={resp}");
             status
         }));
     }
