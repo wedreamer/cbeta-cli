@@ -199,26 +199,28 @@ fn get_known_line_id_and_ghost() {
 
 #[test]
 fn search_mode_phrase_hits_yuan_sheng() {
-    // Given: mini index (T1578 has 緣生故如幻 at 0268b22)
+    // Given: mini index aligned to xml-p5@2026R2 (如幻緣生故 at 0268b21)
     let (corpus, index) = built();
-    // When: issue #7 acceptance — CLI --mode phrase
+    // When: real-canon consecutive string, not the synthetic 缘生故如幻
     let out = run(
         &corpus,
         &index,
-        &["search", "--mode", "phrase", "缘生故如幻"],
+        &["search", "--mode", "phrase", "如幻緣生故"],
     );
     let stdout = stdout_utf8(&out);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    // Then: hit, not clap usage error
+    // Then: hit the real line_id, not b22 / ghost a12
     assert_eq!(
         out.status.code(),
         Some(0),
-        "--mode phrase should search; stdout={stdout} stderr={stderr}"
+        "--mode phrase 如幻緣生故; stdout={stdout} stderr={stderr}"
     );
     assert!(
-        stdout.contains("T30n1578")
-            || stdout.contains("緣生故如幻")
-            || stdout.contains("缘生故如幻"),
-        "expected T1578 phrase hit; got:\n{stdout}"
+        stdout.contains("T30n1578_p0268b21"),
+        "expected T30n1578_p0268b21; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("T30n1578_p0268b22") && !stdout.contains("T30n1578_p0268a12"),
+        "must not hit synthetic b22 or ghost a12; got:\n{stdout}"
     );
 }
