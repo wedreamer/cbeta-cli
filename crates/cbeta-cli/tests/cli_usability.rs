@@ -224,3 +224,68 @@ fn search_mode_phrase_hits_yuan_sheng() {
         "must not hit synthetic b22 or ghost a12; got:\n{stdout}"
     );
 }
+
+#[test]
+fn script_s_converts_display_keeps_line_id() {
+    // Given: mini index with 繁體 text_raw 真性有為空
+    let (corpus, index) = built();
+    // When: --script s --plain on a known hit
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--script", "s", "--plain", "真性有为空"],
+    );
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: line_id unchanged; display snippet/title in 简体
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "--script s; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("T30n1578_p0268b21"),
+        "line_id must stay; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("真性有为空") || stdout.contains("大乘掌珍论"),
+        "expected 简体 display; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("真性有為空"),
+        "must not keep 繁體 snippet when --script s; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn script_unknown_exits_2() {
+    let (corpus, index) = built();
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--script", "x", "--plain", "空"],
+    );
+    assert_eq!(out.status.code(), Some(2), "unknown --script must exit 2");
+}
+
+#[test]
+fn mode_near_accepted_unknown_mode_exits_2() {
+    let (corpus, index) = built();
+    let ok = run(
+        &corpus,
+        &index,
+        &["search", "--mode", "near", "--explain", "--json", "空性+缘生"],
+    );
+    assert_eq!(
+        ok.status.code(),
+        Some(0),
+        "--mode near explain; stderr={}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let bad = run(
+        &corpus,
+        &index,
+        &["search", "--mode", "fuzzy", "空"],
+    );
+    assert_eq!(bad.status.code(), Some(2), "unknown --mode must exit 2");
+}
