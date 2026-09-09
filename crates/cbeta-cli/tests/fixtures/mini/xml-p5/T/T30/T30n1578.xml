@@ -9,8 +9,8 @@
   <text>
     <body>
       <cb:juan n="1" fun="open"/>
-      <lb n="0268b21"/><app><lem>真性有為空</lem><rdg>真性有为空</rdg></app>
-      <lb n="0268b22"/>緣生故如幻
+      <lb n="0268b21"/><app><lem>真性有為空，如幻緣生故</lem><rdg>真性有为空，如幻缘生故</rdg></app>
+      <lb n="0268b22"/>無為無有實，不起似空華
     </body>
   </text>
 </TEI>
