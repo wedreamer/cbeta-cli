@@ -25,7 +25,7 @@ pub fn build_query(
         return Ok(term_or_phrase(&raw, fields));
     }
     match parsed.mode.as_str() {
-        "keyword" | "wildcard" => {
+        "keyword" | "wildcard" | "phrase" => {
             // Contiguous string → phrase of unigrams (positions are char indices).
             Ok(term_or_phrase(&norms[0], fields))
         }
@@ -132,6 +132,18 @@ mod tests {
             raw: "真性有為空".into(),
             mode: "keyword".into(),
             terms: vec!["真性有為空".into()],
+            within_chars: None,
+            wildcard: None,
+        };
+        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+    }
+
+    #[test]
+    fn phrase_mode_uses_term_or_phrase() {
+        let pq = ParsedQuery {
+            raw: "缘生故如幻".into(),
+            mode: "phrase".into(),
+            terms: vec!["缘生故如幻".into()],
             within_chars: None,
             wildcard: None,
         };

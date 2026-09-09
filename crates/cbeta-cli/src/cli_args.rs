@@ -16,6 +16,9 @@ pub struct Cli {
     pub query: Option<String>,
     #[arg(long, global = true)]
     pub json: bool,
+    /// Search engine mode override (`keyword` or `phrase`).
+    #[arg(long, global = true)]
+    pub mode: Option<String>,
     #[arg(long, global = true)]
     pub explain: bool,
     #[arg(long, global = true)]
@@ -57,6 +60,8 @@ pub struct CliOut {
     pub action: Action,
     pub q: Option<String>,
     pub json: bool,
+    /// CLI `--mode` override; applied to `parsed_query` after parse.
+    pub mode: Option<String>,
     pub explain: bool,
     pub plain: bool,
     pub filters: Filters,
@@ -86,6 +91,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Search,
             q: cli.query,
             json: cli.json,
+            mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -94,6 +100,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Search,
             q,
             json: cli.json,
+            mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -102,6 +109,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Verify,
             q: Some(text),
             json: cli.json,
+            mode: None,
             explain: cli.explain,
             plain: cli.plain,
             filters: Filters::default(),
@@ -110,6 +118,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Get,
             q: Some(line_id),
             json: cli.json,
+            mode: None,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -118,6 +127,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Catalog,
             q: None,
             json: cli.json,
+            mode: None,
             explain: false,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -126,6 +136,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Info,
             q: None,
             json: cli.json,
+            mode: None,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -134,6 +145,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Build,
             q: scope,
             json: cli.json,
+            mode: None,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -142,6 +154,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             action: Action::Serve,
             q: None,
             json: false,
+            mode: None,
             explain: false,
             plain: false,
             filters: Filters::default(),
@@ -169,6 +182,7 @@ mod tests {
             command: None,
             query: None,
             json: false,
+            mode: None,
             explain: false,
             plain: false,
             canon: None,
@@ -260,5 +274,16 @@ mod tests {
         cli.explain = true;
         let out = resolve(cli);
         assert!(!out.explain);
+    }
+
+    #[test]
+    fn resolve_search_keeps_mode_flag() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Search {
+            q: Some("缘生故如幻".into()),
+        });
+        cli.mode = Some("phrase".into());
+        let out = resolve(cli);
+        assert_eq!(out.mode.as_deref(), Some("phrase"));
     }
 }
