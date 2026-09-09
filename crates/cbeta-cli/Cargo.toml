@@ -18,9 +18,11 @@ clap.workspace = true
 clap_complete.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-# MCP stdio server (L-mcp). server pulls schemars; transport-io = stdin/stdout pair.
-rmcp = { version = "3", default-features = false, features = ["server", "macros", "transport-io"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync"] }
+# MCP stdio + streamable HTTP (L-mcp / L-http).
+rmcp = { version = "3", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "net", "io-util", "time", "signal"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
 schemars = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
