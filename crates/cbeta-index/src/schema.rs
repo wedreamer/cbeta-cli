@@ -28,6 +28,8 @@ pub struct LineSchema {
     pub text_raw: Field,
     /// Normalized search text (tokenized + stored for char-span confirm).
     pub text_norm: Field,
+    /// SHA-256 hex of `text_norm` for O(1) exact verify (STRING|STORED).
+    pub norm_hash: Field,
     /// Human citation string.
     pub citation: Field,
 }
@@ -54,6 +56,7 @@ pub fn build_line_schema() -> LineSchema {
         .set_indexing_options(text_indexing)
         .set_stored();
     let text_norm = builder.add_text_field("text_norm", text_norm_opts);
+    let norm_hash = builder.add_text_field("norm_hash", STRING | STORED);
 
     let citation = builder.add_text_field("citation", STORED);
 
@@ -67,6 +70,7 @@ pub fn build_line_schema() -> LineSchema {
         juan,
         text_raw,
         text_norm,
+        norm_hash,
         citation,
     }
 }

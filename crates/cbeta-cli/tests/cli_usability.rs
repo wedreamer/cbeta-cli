@@ -224,3 +224,68 @@ fn search_mode_phrase_hits_yuan_sheng() {
         "must not hit synthetic b22 or ghost a12; got:\n{stdout}"
     );
 }
+
+#[test]
+fn verify_json_schema_exact_and_variant() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: exact original quote
+    let exact = run(
+        &corpus,
+        &index,
+        &["verify", "--json", "真性有為空，如幻緣生故"],
+    );
+    let exact_out = stdout_utf8(&exact);
+    assert_eq!(
+        exact.status.code(),
+        Some(0),
+        "exact verify; stderr={}",
+        String::from_utf8_lossy(&exact.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&exact_out).unwrap_or_else(|e| panic!("json: {e}; {exact_out}"));
+    assert_eq!(v["is_original"], true);
+    assert_eq!(v["exact_hit"]["line_id"], "T30n1578_p0268b21");
+    assert!(
+        v.get("action").is_none(),
+        "must not dump Command; got {exact_out}"
+    );
+
+    // When: issue 异文 verse
+    let variant = run(
+        &corpus,
+        &index,
+        &[
+            "verify",
+            "--json",
+            "真性有为空，缘生故如幻，无为无起灭，不实若空华。",
+        ],
+    );
+    let var_out = stdout_utf8(&variant);
+    assert_eq!(
+        variant.status.code(),
+        Some(0),
+        "variant verify; stderr={}",
+        String::from_utf8_lossy(&variant.stderr)
+    );
+    let vv: serde_json::Value =
+        serde_json::from_str(&var_out).unwrap_or_else(|e| panic!("json: {e}; {var_out}"));
+    assert_eq!(vv["is_original"], false);
+    assert!(vv.get("exact_hit").is_none() || vv["exact_hit"].is_null());
+    let similar = vv["similar"].as_array().expect("similar array");
+    assert!(!similar.is_empty(), "expected similar; got {var_out}");
+    assert_eq!(similar[0]["work_id"], "T1578");
+}
+
+#[test]
+fn verify_tty_shows_is_original() {
+    let (corpus, index) = built();
+    let out = run(&corpus, &index, &["verify", "真性有為空，如幻緣生故"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        stdout.contains("is_original=true"),
+        "expected is_original=true; got:\n{stdout}"
+    );
+    assert!(stdout.contains("T30n1578_p0268b21"));
+}

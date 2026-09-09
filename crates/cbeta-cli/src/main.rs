@@ -6,6 +6,7 @@ mod cmd_build;
 mod cmd_catalog;
 mod cmd_get;
 mod cmd_search;
+mod cmd_verify;
 mod copy_fmt;
 mod env_paths;
 mod scope_io;
@@ -84,17 +85,8 @@ fn main() {
         Action::Get | Action::Read | Action::Cite => std::process::exit(cmd_get::run(&cmd)),
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
-        Action::Verify if out.json => {
-            #[allow(clippy::expect_used)]
-            {
-                println!("{}", serde_json::to_string_pretty(&cmd).expect("json"));
-            }
-        }
+        Action::Verify => std::process::exit(cmd_verify::run(&cmd)),
         Action::Serve => {
-            eprintln!("index not built yet; try: cbeta search --explain --json '空性+缘生'");
-            std::process::exit(2);
-        }
-        _ => {
             eprintln!("index not built yet; try: cbeta search --explain --json '空性+缘生'");
             std::process::exit(2);
         }

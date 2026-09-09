@@ -8,6 +8,7 @@ description = "Tantivy index builder for CBETA scopes"
 [dependencies]
 cbeta-core.workspace = true
 cbeta-parse.workspace = true
+sha2.workspace = true
 tantivy.workspace = true
 thiserror.workspace = true
 

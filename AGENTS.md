@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). **P1 L-verify landed:** `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`); hash(norm) exact + n-gram/alignment similar; exit 0 even when not original. `--explain --json` still dumps **Command** (parse dump, not hits). `serve` remains scaffold.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
 
@@ -16,10 +16,10 @@ Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer
 ```
 cbeta-cli/
 ├── Cargo.toml              # workspace; clap pinned =4.5.23
-├── crates/cbeta-core/      # Command / Hit / Filters / parse_query
+├── crates/cbeta-core/      # Command / Hit / VerifyReport / Filters / parse_query
 ├── crates/cbeta-parse/     # TEI P5 + 繁简/异体/缺字/去标点
 ├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/
-├── crates/cbeta-search/    # keyword/phrase (near Boolean AND in P0; no span confirm)
+├── crates/cbeta-search/    # keyword/phrase + verify (near Boolean AND in P0; no span confirm)
 ├── crates/cbeta-cli/       # bin name `cbeta`; clap → Command; tests/ = CLI contracts
 └── docs/                   # search-modes.md, human-ux.md, roadmap.md
 ```
@@ -51,9 +51,9 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 ### Automated (CI)
 
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
-- `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`). This **locks** the recipes; it does **not** replace the local protocol below.
+- `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`, verify exact/variant JSON). This **locks** the recipes; it does **not** replace the local protocol below.
 - `crates/cbeta-cli/tests/cli_product_hits.rs`: product JSON hits (not ignored).
-- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. `verify` / `serve` still Command-dump / exit 2; search / get / catalog / info / build are product.
+- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. `serve` still exit 2; search / get / catalog / info / build / verify are product.
 - Workspace **line** coverage ≥95 via `cargo llvm-cov` (command in COMMANDS).
 - CI exists: `.github/workflows/ci.yml`.
 
@@ -74,12 +74,14 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
    - `cbeta get T30n1578_p0268b21` exit 0; ghost `T30n1578_p0268a12` exit 1
    - `cbeta get T30n1578_p0268b21 -C 4` TTY neighbors + citation; `--json` → `{ hit, before, after }`
    - `cbeta read T0235 --juan 1`; `cbeta cite T30n1578_p0268b21`; `cbeta get … --copy` stdout block
+   - `cbeta verify '真性有為空，如幻緣生故'` → is_original=true, line_id b21
+   - `cbeta verify --json '真性有为空，缘生故如幻…'` → is_original=false, similar[0].work_id=T1578; never Command dump
 4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini. Mini T1578 has few lines — `-C 4` may return fewer than 4 neighbors.
 5. Closing P0/P1 **also** requires a transcript against `CBETA_CORPUS=$HOME/.cbeta/corpus/2026R2` (real xml-p5, not mini). Record command/env/stdout/stderr/exit. Do not claim “usable” from `cargo test` alone.
 
 ### Not product yet (do not lock)
 
-- `verify` / `serve` remain scaffold.
+- `serve` remains scaffold.
 - `--explain --json` still dumps Command.
 - NEAR char-span confirm, `--script` / `--window` remain P1+.
 
@@ -94,7 +96,7 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 - `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`.
 - `read <work> --juan <N>` lists lines; `cite <line_id>` prints citation; `--copy` prints notes block to stdout (no xclip/arboard).
 - `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
-- Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**.
+- Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**. `verify` exits **0** for both original and not-original (check command); **2** no index.
 - TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.
 
 ## QUERY DSL (contract in docs/search-modes.md)
@@ -136,6 +138,8 @@ CBETA_CORPUS=crates/cbeta-cli/tests/fixtures/mini CBETA_INDEX=/tmp/cbeta-use NO_
   cargo run -p cbeta-cli -- build --scope ci-minimal
 CBETA_CORPUS=crates/cbeta-cli/tests/fixtures/mini CBETA_INDEX=/tmp/cbeta-use NO_COLOR=1 \
   cargo run -p cbeta-cli -- 真性有为空
+CBETA_CORPUS=crates/cbeta-cli/tests/fixtures/mini CBETA_INDEX=/tmp/cbeta-use NO_COLOR=1 \
+  cargo run -p cbeta-cli -- verify --json '真性有为空，缘生故如幻，无为无起灭，不实若空华。'
 # --explain --json still dumps Command (not hits)
 cargo run -p cbeta-cli -- search --explain --json '空性+缘生'
 ```

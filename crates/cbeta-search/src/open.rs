@@ -70,6 +70,7 @@ fn fields_from_index(index: &Index) -> Result<LineSchema> {
         juan: get("juan")?,
         text_raw: get("text_raw")?,
         text_norm: get("text_norm")?,
+        norm_hash: get("norm_hash")?,
         citation: get("citation")?,
     })
 }

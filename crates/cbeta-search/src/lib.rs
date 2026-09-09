@@ -7,10 +7,12 @@ mod error;
 mod hitmap;
 mod open;
 mod query_build;
+mod verify;
 
 pub use context::{get_context, list_work_juan, GetContext};
 pub use error::{Error, Result};
 pub use open::{active_artifact, open_search_index};
+pub use verify::verify;
 
 use cbeta_core::{Filters, Hit, ParsedQuery};
 use cbeta_parse::GaijiMap;

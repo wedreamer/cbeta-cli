@@ -10,6 +10,7 @@ cbeta-core.workspace = true
 cbeta-parse.workspace = true
 cbeta-index.workspace = true
 serde.workspace = true
+strsim.workspace = true
 thiserror.workspace = true
 tantivy.workspace = true
 
