@@ -145,4 +145,42 @@ mod tests {
         assert!(other.is_dir());
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn publish_dir_refuses_existing_dest() {
+        let root = tempfile_dir();
+        let dest = root.join("live");
+        fs::create_dir_all(&dest).expect("dest");
+        let tmp = root.join("staged.tmp");
+        fs::create_dir_all(&tmp).expect("tmp");
+        let err = publish_dir(&tmp, &dest).expect_err("exists");
+        assert!(format!("{err}").contains("already exists"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_current_pointer_clears_stale_tmp() {
+        let root = tempfile_dir();
+        fs::write(root.join("CURRENT.tmp"), b"stale\n").expect("stale");
+        write_current_pointer(&root, "2026R2-abc").expect("write");
+        let body = fs::read_to_string(root.join("CURRENT")).expect("read");
+        assert_eq!(body.trim(), "2026R2-abc");
+        assert!(!root.join("CURRENT.tmp").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn stage_tmp_wipes_stale_and_creates_parent() {
+        let root = tempfile_dir();
+        let nested = root.join("nested");
+        let intended = nested.join("2026R2-x");
+        let stale = tmp_dir_for(&intended);
+        fs::create_dir_all(&stale).expect("stale");
+        fs::write(stale.join("old"), b"x").expect("old");
+        let tmp = stage_tmp_dir(&intended).expect("stage");
+        assert!(tmp.is_dir());
+        assert!(!tmp.join("old").exists());
+        assert!(nested.is_dir());
+        let _ = fs::remove_dir_all(&root);
+    }
 }
