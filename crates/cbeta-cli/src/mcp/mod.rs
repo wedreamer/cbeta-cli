@@ -1,6 +1,7 @@
-//! MCP tool surface for `cbeta serve` (stdio transport).
+//! MCP tool surface for `cbeta serve` (stdio / HTTP transport).
 
-mod handlers;
-mod tools;
+pub(crate) mod handlers;
+mod query;
+pub(crate) mod tools;
 
 pub use tools::CbetaMcp;
