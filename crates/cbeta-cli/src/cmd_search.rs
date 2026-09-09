@@ -145,6 +145,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(crate::cmd_build::run(&build_cmd), 0);
         let out = f();
@@ -178,6 +180,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 2);
     }
@@ -195,6 +199,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: Some(pq),
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 2);
     }
@@ -212,6 +218,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: Some(pq),
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 2);
         std::env::remove_var("CBETA_INDEX");
@@ -229,6 +237,8 @@ mod tests {
                 format: Format::Json,
                 explain: false,
                 parsed_query: Some(pq.clone()),
+                context: None,
+                copy: false,
             };
             assert_eq!(run(&cmd), 0);
             cmd.format = Format::Plain;

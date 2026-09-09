@@ -269,6 +269,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 2);
         let cmd2 = Command {
@@ -293,6 +295,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         // missing is a dir but no MANIFEST → scope not found after corpus check
         // corpus_root ok if dir exists; build_scope checks is_dir then MANIFEST
@@ -325,6 +329,8 @@ mod tests {
             format: Format::Plain,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 2);
         std::env::remove_var("CBETA_CORPUS");
@@ -347,6 +353,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 0);
         assert!(index.join("2026R2-c1f1x7a0").is_dir());
@@ -379,6 +387,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run(&cmd), 0);
         std::env::remove_var("CBETA_CORPUS");

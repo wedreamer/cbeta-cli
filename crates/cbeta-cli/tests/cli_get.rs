@@ -67,7 +67,7 @@ fn get_b21_tty_citation() {
 }
 
 #[test]
-fn get_b21_json_context() {
+fn get_b21_json_before_after() {
     // Given: mini index
     let (corpus, index) = built();
     // When: get --json -C 4
@@ -85,7 +85,8 @@ fn get_b21_json_context() {
     );
     let v: serde_json::Value =
         serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; stdout={stdout}"));
-    // Then: { hit: Hit, context: Hit[] }
+    // Then: { hit, before: Hit[], after: Hit[] } — never a flat "context" key
+    assert!(v.get("context").is_none(), "no flat context key; {stdout}");
     let hit = v
         .get("hit")
         .unwrap_or_else(|| panic!("missing hit; {stdout}"));
@@ -94,15 +95,56 @@ fn get_b21_json_context() {
         hit["citation"],
         "(CBETA 2026.R2, T30, no. 1578, p. 268, b21)"
     );
-    let ctx = v["context"]
+    let before = v["before"]
         .as_array()
-        .unwrap_or_else(|| panic!("context array; {stdout}"));
-    // Mini T1578 has multiple lines around b21; radius 4 yields neighbors.
-    assert!(!ctx.is_empty(), "expected neighbor context; got {stdout}");
-    for h in ctx {
-        assert!(h.get("line_id").is_some(), "context hit fields; {h}");
+        .unwrap_or_else(|| panic!("before array; {stdout}"));
+    let after = v["after"]
+        .as_array()
+        .unwrap_or_else(|| panic!("after array; {stdout}"));
+    // Mini T1578 has neighbors around b21; radius 4 yields at least one side.
+    assert!(
+        !before.is_empty() || !after.is_empty(),
+        "expected neighbors; got {stdout}"
+    );
+    for h in before.iter().chain(after.iter()) {
+        assert!(h.get("line_id").is_some(), "neighbor hit fields; {h}");
         assert_ne!(h["line_id"], "T30n1578_p0268b21");
     }
+    for h in before {
+        assert!(
+            h["line_id"].as_str().unwrap_or("") < "T30n1578_p0268b21",
+            "before must sort before center; {h}"
+        );
+    }
+    for h in after {
+        assert!(
+            h["line_id"].as_str().unwrap_or("") > "T30n1578_p0268b21",
+            "after must sort after center; {h}"
+        );
+    }
+}
+
+#[test]
+fn get_json_without_context_stays_hit_only() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: get --json without -C
+    let out = run(&corpus, &index, &["get", "--json", "T30n1578_p0268b21"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "json get no -C; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; stdout={stdout}"));
+    // Then: { hit } only — no before/after/context keys
+    assert!(v.get("hit").is_some(), "hit; {stdout}");
+    assert_eq!(v["hit"]["line_id"], "T30n1578_p0268b21");
+    assert!(v.get("before").is_none(), "no before without -C; {stdout}");
+    assert!(v.get("after").is_none(), "no after without -C; {stdout}");
+    assert!(v.get("context").is_none(), "no context key; {stdout}");
 }
 
 #[test]
@@ -151,11 +193,11 @@ fn read_t0235_juan_1() {
 fn copy_payload_format() {
     // Given: mini index
     let (corpus, index) = built();
-    // When: get --copy (clipboard best-effort; must not fail headless CI)
+    // When: get --copy (stdout only; no OS clipboard)
     let out = run(&corpus, &index, &["get", "T30n1578_p0268b21", "--copy"]);
     let stdout = stdout_utf8(&out);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    // Then: exit 0 even if clipboard missing; payload shape for notes
+    // Then: exit 0; notes block on stdout; no clipboard noise required
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -170,6 +212,10 @@ fn copy_payload_format() {
     assert!(
         stdout.contains("(CBETA 2026.R2, T30, no. 1578, p. 268, b21)"),
         "copy citation; got:\n{stdout}"
+    );
+    assert!(
+        !stderr.to_lowercase().contains("clipboard"),
+        "no clipboard API noise; stderr={stderr}"
     );
 }
 
