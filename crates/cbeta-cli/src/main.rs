@@ -18,7 +18,7 @@ fn main() {
     let out = resolve(Cli::parse());
 
     // WHY: only Search runs parse_query; get/verify/build must keep raw q untouched.
-    let parsed = if out.action == Action::Search {
+    let mut parsed = if out.action == Action::Search {
         match out.q.as_deref() {
             Some(raw) => match parse_query(raw) {
                 Ok(p) => Some(p),
@@ -32,6 +32,20 @@ fn main() {
     } else {
         None
     };
+
+    // WHY: clap --mode overrides DSL-inferred mode; P0 accepts keyword|phrase only.
+    if let Some(flag) = out.mode.as_deref() {
+        match parsed.as_mut() {
+            Some(pq) if flag == "keyword" || flag == "phrase" => {
+                pq.mode = flag.to_string();
+            }
+            Some(_) => {
+                eprintln!("unknown --mode {flag}; expected keyword or phrase");
+                std::process::exit(2);
+            }
+            None => {}
+        }
+    }
 
     let cmd = Command {
         action: out.action,
