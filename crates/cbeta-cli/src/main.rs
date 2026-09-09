@@ -33,19 +33,33 @@ fn main() {
         None
     };
 
-    // WHY: clap --mode overrides DSL-inferred mode; P0 accepts keyword|phrase only.
+    // WHY: clap --mode overrides DSL-inferred mode for agent/human force-pick.
+    const MODES: &[&str] = &[
+        "keyword", "phrase", "near", "before", "wildcard", "boolean",
+    ];
     if let Some(flag) = out.mode.as_deref() {
         match parsed.as_mut() {
-            Some(pq) if flag == "keyword" || flag == "phrase" => {
+            Some(pq) if MODES.contains(&flag) => {
                 pq.mode = flag.to_string();
             }
             Some(_) => {
-                eprintln!("unknown --mode {flag}; expected keyword or phrase");
+                eprintln!(
+                    "unknown --mode {flag}; expected keyword|phrase|near|before|wildcard|boolean"
+                );
                 std::process::exit(2);
             }
             None => {}
         }
     }
+
+    let script = match out.script.as_deref() {
+        None => None,
+        Some("s") => Some("s".to_string()),
+        Some(other) => {
+            eprintln!("unknown --script {other}; expected s");
+            std::process::exit(2);
+        }
+    };
 
     let cmd = Command {
         action: out.action,
@@ -53,6 +67,7 @@ fn main() {
         filters: out.filters,
         format: format_of(out.json, out.plain),
         explain: out.explain,
+        script,
         parsed_query: parsed,
     };
 

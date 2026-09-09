@@ -268,6 +268,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run(&cmd), 2);
@@ -292,6 +293,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         // missing is a dir but no MANIFEST → scope not found after corpus check
@@ -324,6 +326,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Plain,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run(&cmd), 2);
@@ -346,6 +349,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run(&cmd), 0);
@@ -378,6 +382,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run(&cmd), 0);

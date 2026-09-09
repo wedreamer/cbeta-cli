@@ -25,9 +25,26 @@ pub fn nfkc(text: &str) -> String {
     text.nfkc().collect()
 }
 
-/// Simplified → Traditional via OpenCC (display stays 繁體; no t2s).
+/// Simplified → Traditional via OpenCC (index/query key space).
 pub fn s2t(text: &str) -> String {
     match s2t_engine() {
+        Some(cc) => cc.convert(text),
+        None => text.to_string(),
+    }
+}
+
+/// Shared OpenCC t2s converter (lazy, process-wide).
+fn t2s_engine() -> Option<&'static OpenCC> {
+    use std::sync::OnceLock;
+    static ENGINE: OnceLock<Option<OpenCC>> = OnceLock::new();
+    ENGINE
+        .get_or_init(|| OpenCC::from_config(BuiltinConfig::T2s).ok())
+        .as_ref()
+}
+
+/// Traditional → Simplified for `--script s` display only.
+pub fn t2s(text: &str) -> String {
+    match t2s_engine() {
         Some(cc) => cc.convert(text),
         None => text.to_string(),
     }

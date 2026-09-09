@@ -249,6 +249,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(crate::cmd_build::run(&cmd), 0);
@@ -266,6 +267,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run_catalog(&cmd), 0);
@@ -324,6 +326,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run_catalog(&cmd), 2);
@@ -344,6 +347,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run_info(&cmd), 0);
@@ -391,6 +395,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run_catalog(&cmd), 0);
@@ -422,6 +427,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run_catalog(&cmd), 2);

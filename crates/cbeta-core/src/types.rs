@@ -81,6 +81,9 @@ pub struct Command {
     /// When true, surface parse/plan details instead of (or before) hits.
     #[serde(default)]
     pub explain: bool,
+    /// Display script override: `Some("s")` = 简体 snippets; default 繁體.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<String>,
     /// Filled when `q` was run through [`crate::parse_query`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parsed_query: Option<crate::ParsedQuery>,

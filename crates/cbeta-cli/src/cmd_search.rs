@@ -34,6 +34,8 @@ pub fn run(cmd: &Command) -> i32 {
         }
     };
 
+    let hits = apply_script(hits, cmd.script.as_deref());
+
     match cmd.format {
         Format::Json => {
             #[allow(clippy::expect_used)]
@@ -66,6 +68,19 @@ fn want_color(plain: bool) -> bool {
         return false;
     }
     stdout().is_terminal()
+}
+
+/// Convert display fields to 简体 when `--script s`; line_id/citation stay.
+fn apply_script(mut hits: Vec<Hit>, script: Option<&str>) -> Vec<Hit> {
+    if script != Some("s") {
+        return hits;
+    }
+    for h in &mut hits {
+        h.title = cbeta_parse::t2s(&h.title);
+        h.author = cbeta_parse::t2s(&h.author);
+        h.text_raw = cbeta_parse::t2s(&h.text_raw);
+    }
+    hits
 }
 
 fn print_human(hits: &[Hit], terms: &[String], color: bool) {
@@ -144,6 +159,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(crate::cmd_build::run(&build_cmd), 0);
@@ -177,6 +193,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: None,
         };
         assert_eq!(run(&cmd), 2);
@@ -194,6 +211,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: Some(pq),
         };
         assert_eq!(run(&cmd), 2);
@@ -211,6 +229,7 @@ mod tests {
             filters: Filters::default(),
             format: Format::Json,
             explain: false,
+            script: None,
             parsed_query: Some(pq),
         };
         assert_eq!(run(&cmd), 2);
@@ -228,6 +247,7 @@ mod tests {
                 filters: Filters::default(),
                 format: Format::Json,
                 explain: false,
+                script: None,
                 parsed_query: Some(pq.clone()),
             };
             assert_eq!(run(&cmd), 0);

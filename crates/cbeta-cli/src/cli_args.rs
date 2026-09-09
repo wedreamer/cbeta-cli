@@ -16,9 +16,12 @@ pub struct Cli {
     pub query: Option<String>,
     #[arg(long, global = true)]
     pub json: bool,
-    /// Search engine mode override (`keyword` or `phrase`).
+    /// Search engine mode override.
     #[arg(long, global = true)]
     pub mode: Option<String>,
+    /// Display script: `s` = 简体 snippets (default 繁體).
+    #[arg(long, global = true)]
+    pub script: Option<String>,
     #[arg(long, global = true)]
     pub explain: bool,
     #[arg(long, global = true)]
@@ -62,6 +65,8 @@ pub struct CliOut {
     pub json: bool,
     /// CLI `--mode` override; applied to `parsed_query` after parse.
     pub mode: Option<String>,
+    /// CLI `--script` (`s` = 简体 display).
+    pub script: Option<String>,
     pub explain: bool,
     pub plain: bool,
     pub filters: Filters,
@@ -92,6 +97,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: cli.query,
             json: cli.json,
             mode: cli.mode,
+            script: cli.script,
             explain: cli.explain,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -101,6 +107,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q,
             json: cli.json,
             mode: cli.mode,
+            script: cli.script,
             explain: cli.explain,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -110,6 +117,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: Some(text),
             json: cli.json,
             mode: None,
+            script: None,
             explain: cli.explain,
             plain: cli.plain,
             filters: Filters::default(),
@@ -119,6 +127,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: Some(line_id),
             json: cli.json,
             mode: None,
+            script: cli.script,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -128,6 +137,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: None,
             json: cli.json,
             mode: None,
+            script: None,
             explain: false,
             plain: cli.plain,
             filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
@@ -137,6 +147,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: None,
             json: cli.json,
             mode: None,
+            script: None,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -146,6 +157,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: scope,
             json: cli.json,
             mode: None,
+            script: None,
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
@@ -155,6 +167,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             q: None,
             json: false,
             mode: None,
+            script: None,
             explain: false,
             plain: false,
             filters: Filters::default(),
@@ -183,6 +196,7 @@ mod tests {
             query: None,
             json: false,
             mode: None,
+            script: None,
             explain: false,
             plain: false,
             canon: None,
