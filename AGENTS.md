@@ -2,14 +2,14 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0+P1 search landed (2026-09):** `build`, keyword/phrase/near/before/wildcard/boolean search (TTY + `--json` Hits), near/before char-span confirm on stored `text_norm`, `?` single-char wildcard, `--script s` 简体 display, `--work` filter, `get` by `line_id`, `catalog` / `info`. `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
 
 ## AGENT LANGUAGE
 
 - 对用户优先说**简体中文**。代码、标识符、命令、路径、crate 名保持原文。
-- 与产品约定分开：经文查询输入简体、展示默认繁體，这是 intent。切换靠 `--script` / `--window`，均为 planned UX（`docs/human-ux.md` 规则 5–6），尚不在 clap 上，勿当作可用标志。不要把对话语言改成繁体。
+- 与产品约定分开：经文查询输入简体、展示默认繁體，这是 intent。`--script s` 已落地（snippet/title/author → 简体；`line_id`/citation 不变）。`--window` 仍为 planned UX（`docs/human-ux.md` 规则 6），尚不在 clap 上。不要把对话语言改成繁体。
 
 ## STRUCTURE
 
@@ -19,7 +19,7 @@ cbeta-cli/
 ├── crates/cbeta-core/      # Command / Hit / Filters / parse_query
 ├── crates/cbeta-parse/     # TEI P5 + 繁简/异体/缺字/去标点
 ├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/
-├── crates/cbeta-search/    # keyword/phrase (near Boolean AND in P0; no span confirm)
+├── crates/cbeta-search/    # keyword/phrase/near/before/wildcard; confirm.rs char-span
 ├── crates/cbeta-cli/       # bin name `cbeta`; clap → Command; tests/ = CLI contracts
 └── docs/                   # search-modes.md, human-ux.md, roadmap.md
 ```
@@ -51,7 +51,7 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 ### Automated (CI)
 
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
-- `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`). This **locks** the recipes; it does **not** replace the local protocol below.
+- `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`, `--script s`, DSL `--explain --json` near/before/wildcard, `--work T1578`). This **locks** the recipes; it does **not** replace the local protocol below.
 - `crates/cbeta-cli/tests/cli_product_hits.rs`: product JSON hits (not ignored).
 - `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. `verify` / `serve` still Command-dump / exit 2; search / get / catalog / info / build are product.
 - Workspace **line** coverage ≥95 via `cargo llvm-cov` (command in COMMANDS).
@@ -75,11 +75,12 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini.
 5. Closing P0 **also** requires a transcript against `CBETA_CORPUS=$HOME/.cbeta/corpus/2026R2` (real xml-p5, not mini). Record command/env/stdout/stderr/exit. Do not claim “usable” from `cargo test` alone.
 
-### Not P0 (do not lock as product)
+### Not product yet (do not lock as done)
 
 - `verify` / `serve` remain scaffold.
-- `--explain --json` still dumps Command.
-- NEAR char-span confirm, `get -C`, `--script` / `--window` are P1.
+- `--explain --json` still dumps Command (not hits).
+- `get -C`, `--window`, `--copy`, MCP/HTTP remain later slices.
+- P1 search landed: near/before span confirm on `text_norm`, `?` wildcard, `--script s`, boolean `&`/`,`/`-` parse, `--mode` keyword|phrase|near|before|wildcard|boolean.
 
 ## PARSE SCOPE (do not freeze the old bug)
 
@@ -89,7 +90,8 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 - clap subcommands: Search, Verify, Get, Catalog, Info, Build, Serve. `Action::Read` / `Action::Cite` exist on the type only, not in clap.
 - Bare `cbeta 色即是空` is search (no-subcommand → `Action::Search`).
-- `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
+- `--mode keyword|phrase|near|before|wildcard|boolean` overrides `parsed_query.mode` on Search (unknown value → exit 2).
+- `--script s` converts display snippet/title/author to 简体; default 繁體; unknown script → exit 2. `line_id` and citation stay.
 - Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**.
 - TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.
 
@@ -97,8 +99,8 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 - Distance = **normalized 汉字**, never tokens. CBReader default window 30 chars; `+` → near/30, `*` → before/30, `NEAR/N`, `?` single-char wildcard.
 - Fullwidth rejection set (verified in `cbeta-core/src/lib.rs`): `— ＋ ＊ ＆ ？`. Fullwidth comma `，` is **not** rejected.
-- Do not treat CBReader `+ * & , - ?` as the agent API. Agents pass structured `clauses` (not yet a type; do not invent one in this PR).
-- Do not implement near as Tantivy `PhraseQuery` slop alone. Recall via 2-gram Boolean AND, confirm char-span on stored `text_norm`.
+- Do not treat CBReader `+ * & , - ?` as the agent API. Agents pass structured `clauses` on `ParsedQuery` (not on `Command`).
+- Near/before: recall via term/2-gram Boolean AND, **confirm** char-span on stored `text_norm` (`confirm.rs`). Do **not** use Tantivy `PhraseQuery` slop as near confirm. Default window 30; `NEAR/N` sets window; unordered near vs ordered before.
 
 ## ANTI-PATTERNS
 
