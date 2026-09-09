@@ -81,7 +81,7 @@ fn main() {
                 );
             }
         }
-        Action::Search => std::process::exit(cmd_search::run(&cmd)),
+        Action::Search => std::process::exit(cmd_search::run(&cmd, out.script.as_deref())),
         Action::Get | Action::Read | Action::Cite => std::process::exit(cmd_get::run(&cmd)),
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),

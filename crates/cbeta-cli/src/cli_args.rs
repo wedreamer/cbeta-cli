@@ -33,6 +33,9 @@ pub struct Cli {
     pub works: Vec<String>,
     #[arg(long = "title", global = true)]
     pub titles: Vec<String>,
+    /// Display script: `s` 简体, `t` 繁體. Unset keeps default 繁體.
+    #[arg(long, global = true, value_parser = ["s", "t"])]
+    pub script: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -80,6 +83,8 @@ pub struct CliOut {
     pub mode: Option<String>,
     pub explain: bool,
     pub plain: bool,
+    /// Display script (`s`/`t`); display-only, never mutates `line_id` / index.
+    pub script: Option<String>,
     pub filters: Filters,
     /// `-C` / `--context` for Get.
     pub context: u32,
@@ -115,6 +120,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
+            script: cli.script,
             filters,
             context: 0,
             copy: false,
@@ -126,6 +132,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
+            script: cli.script,
             filters,
             context: 0,
             copy: false,
@@ -137,6 +144,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: cli.explain,
             plain: cli.plain,
+            script: cli.script,
             filters: Filters::default(),
             context: 0,
             copy: false,
@@ -152,6 +160,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
+            script: cli.script,
             filters: Filters::default(),
             context,
             copy,
@@ -170,6 +179,7 @@ pub fn resolve(cli: Cli) -> CliOut {
                 mode: None,
                 explain: false,
                 plain: cli.plain,
+                script: cli.script,
                 filters,
                 context: 0,
                 copy: false,
@@ -182,6 +192,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
+            script: cli.script,
             filters: Filters::default(),
             context: 0,
             copy: false,
@@ -193,6 +204,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
+            script: cli.script,
             filters,
             context: 0,
             copy: false,
@@ -204,6 +216,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
+            script: cli.script,
             filters: Filters::default(),
             context: 0,
             copy: false,
@@ -215,6 +228,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
+            script: None,
             filters: Filters::default(),
             context: 0,
             copy: false,
@@ -226,6 +240,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: false,
+            script: None,
             filters: Filters::default(),
             context: 0,
             copy: false,
@@ -261,6 +276,7 @@ mod tests {
             types: vec![],
             works: vec![],
             titles: vec![],
+            script: None,
         }
     }
 
