@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use cbeta_core::{Command, Format, IndexInfo};
 use cbeta_index::{
-    artifact_dir_name, artifact_id, require_path_segment, write_artifact, IndexableLine,
+    artifact_dir_name, artifact_id, publish_dir, require_path_segment, resolve_publish_dest,
+    stage_tmp_dir, write_current_pointer, write_tantivy_dir, IndexableLine,
 };
 use cbeta_parse::{parse_tei_lines, GaijiMap};
 
@@ -110,7 +111,10 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
     let mut lines: Vec<IndexableLine> = Vec::new();
     let mut works_seen = 0_u64;
 
-    for rel in &files {
+    let total = files.len();
+    for (i, rel) in files.iter().enumerate() {
+        // Per-file progress so large canons (e.g. taisho) are not silent for minutes.
+        eprintln!("[{}/{}] {rel}", i + 1, total);
         let Some(row) = by_path.get(rel.as_str()).copied() else {
             eprintln!("warn: no catalog row for {rel}; skipping");
             continue;
@@ -144,20 +148,22 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
 
     let art_name =
         artifact_dir_name(&manifest.cbeta_tag, &manifest.scope_hash).map_err(|e| e.to_string())?;
-    let final_dir = root.join(&art_name);
-    if final_dir.exists() {
-        fs::remove_dir_all(&final_dir)
-            .map_err(|e| format!("remove existing artifact {}: {e}", final_dir.display()))?;
+    let intended = root.join(&art_name);
+
+    // Stage into tmp; never remove_dir_all the live artifact.
+    let tmp = stage_tmp_dir(&intended).map_err(|e| format!("stage tmp: {e}"))?;
+    if let Err(e) = write_tantivy_dir(&tmp, &lines, &gaiji) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!("write index: {e}"));
     }
 
-    let written = write_artifact(
-        &root,
-        &manifest.cbeta_tag,
-        &manifest.scope_hash,
-        &lines,
-        &gaiji,
-    )
-    .map_err(|e| format!("write index: {e}"))?;
+    let dest = match resolve_publish_dest(&intended) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(format!("resolve publish dest: {e}"));
+        }
+    };
 
     let work_count = if manifest.work_count > 0 {
         manifest.work_count
@@ -170,17 +176,30 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         scope: manifest.scope.clone(),
         artifact_id: artifact_id(&manifest.cbeta_tag, &manifest.scope_hash),
         work_count,
-        index_path: written.display().to_string(),
+        index_path: dest.display().to_string(),
     };
 
-    write_sidecar(&written, &info, &manifest, &catalog, &catalog_path)?;
-    fs::write(root.join("CURRENT"), format!("{art_name}\n"))
-        .map_err(|e| format!("write CURRENT: {e}"))?;
+    // Sidecars must exist inside the tree at the moment it becomes visible.
+    if let Err(e) = write_sidecar(&tmp, &info, &manifest, &catalog, &catalog_path) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+
+    if let Err(e) = publish_dir(&tmp, &dest) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!("publish artifact: {e}"));
+    }
+
+    let dest_basename = dest
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("bad dest basename: {}", dest.display()))?;
+    write_current_pointer(&root, dest_basename).map_err(|e| format!("write CURRENT: {e}"))?;
 
     eprintln!(
         "indexed {works_seen} works, {} lines → {}",
         lines.len(),
-        written.display()
+        dest.display()
     );
 
     Ok(info)
@@ -358,9 +377,10 @@ mod tests {
         };
         assert_eq!(run(&cmd), 0);
         assert!(index.join("2026R2-c1f1x7a0").is_dir());
-        // rebuild removes existing artifact
+        // rebuild keeps previous artifact; CURRENT swings to a complete package
         cmd.format = Format::Plain;
         assert_eq!(run(&cmd), 0);
+        assert!(index.join("2026R2-c1f1x7a0").is_dir());
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&index);
