@@ -27,6 +27,8 @@ pub enum Action {
     Serve,
     /// Emit a shell completion script (CLI-only; not an MCP tool).
     Completion,
+    /// CLI-only micro-benchmark over keyword/phrase/near; not an MCP tool.
+    Bench,
 }
 
 /// How results should be rendered.
