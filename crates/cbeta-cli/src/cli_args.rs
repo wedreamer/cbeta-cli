@@ -72,6 +72,12 @@ pub enum Cmds {
         scope: Option<String>,
     },
     Serve,
+    /// Emit shell completion script to stdout (bash/zsh/fish/…).
+    Completion {
+        /// Target shell (`clap_complete::Shell` value_enum).
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 /// Resolved clap values before `parse_query` / product dispatch.
@@ -90,6 +96,8 @@ pub struct CliOut {
     pub context: u32,
     /// `--copy` for Get.
     pub copy: bool,
+    /// Target shell for [`Action::Completion`]; kept here so cbeta-core stays clap-free.
+    pub shell: Option<clap_complete::Shell>,
 }
 
 fn merge_filters(
@@ -124,6 +132,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters,
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Search { q }) => CliOut {
             action: Action::Search,
@@ -136,6 +145,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters,
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Verify { text }) => CliOut {
             action: Action::Verify,
@@ -148,6 +158,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Get {
             line_id,
@@ -164,6 +175,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context,
             copy,
+            shell: None,
         },
         Some(Cmds::Read { work, juan }) => {
             let mut filters = filters;
@@ -183,6 +195,7 @@ pub fn resolve(cli: Cli) -> CliOut {
                 filters,
                 context: 0,
                 copy: false,
+                shell: None,
             }
         }
         Some(Cmds::Cite { line_id }) => CliOut {
@@ -196,6 +209,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Catalog) => CliOut {
             action: Action::Catalog,
@@ -208,6 +222,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters,
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Info) => CliOut {
             action: Action::Info,
@@ -220,6 +235,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Build { scope }) => CliOut {
             action: Action::Build,
@@ -232,6 +248,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            shell: None,
         },
         Some(Cmds::Serve) => CliOut {
             action: Action::Serve,
@@ -244,6 +261,20 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            shell: None,
+        },
+        Some(Cmds::Completion { shell }) => CliOut {
+            action: Action::Completion,
+            q: None,
+            json: false,
+            mode: None,
+            explain: false,
+            plain: false,
+            script: None,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
+            shell: Some(shell),
         },
     }
 }
@@ -345,6 +376,13 @@ mod tests {
                 Some("s"),
             ),
             (Cmds::Serve, Action::Serve, None),
+            (
+                Cmds::Completion {
+                    shell: clap_complete::Shell::Bash,
+                },
+                Action::Completion,
+                None,
+            ),
         ];
         for (cmd, action, q) in cases {
             let mut cli = base_cli();
@@ -353,6 +391,11 @@ mod tests {
             let out = resolve(cli);
             assert_eq!(out.action, action);
             assert_eq!(out.q.as_deref(), q);
+            if action == Action::Completion {
+                assert_eq!(out.shell, Some(clap_complete::Shell::Bash));
+            } else {
+                assert!(out.shell.is_none());
+            }
         }
     }
 

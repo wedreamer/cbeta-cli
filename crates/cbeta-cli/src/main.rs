@@ -4,6 +4,7 @@ mod citation;
 mod cli_args;
 mod cmd_build;
 mod cmd_catalog;
+mod cmd_completion;
 mod cmd_get;
 mod cmd_search;
 mod cmd_serve;
@@ -20,6 +21,17 @@ use cli_args::{format_of, resolve, Cli};
 
 fn main() {
     let out = resolve(Cli::parse());
+
+    // WHY: completion is clap-only; skip parse_query / Command build entirely.
+    if out.action == Action::Completion {
+        match out.shell {
+            Some(shell) => std::process::exit(cmd_completion::run(shell)),
+            None => {
+                eprintln!("internal: completion without shell");
+                std::process::exit(2);
+            }
+        }
+    }
 
     // WHY: only Search runs parse_query; get/verify/build must keep raw q untouched.
     let mut parsed = if out.action == Action::Search {
@@ -89,5 +101,7 @@ fn main() {
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify => std::process::exit(cmd_verify::run(&cmd)),
         Action::Serve => std::process::exit(cmd_serve::run()),
+        // Handled before Command construction; unreachable here.
+        Action::Completion => std::process::exit(2),
     }
 }
