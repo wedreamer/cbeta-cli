@@ -295,4 +295,68 @@ mod tests {
         let err = parse_query("空性＋缘生").unwrap_err();
         assert!(err.to_string().contains("fullwidth"), "Display was: {err}");
     }
+
+    #[test]
+    fn near_with_dash_exclusion_on_right() {
+        let p = parse_query("真如 NEAR/12 缘起-外道").unwrap();
+        assert_eq!(p.mode, "near");
+        assert_eq!(p.terms, vec!["真如", "缘起"]);
+        assert_eq!(p.excluded, vec!["外道"]);
+        assert_eq!(p.within_chars, Some(12));
+    }
+
+    #[test]
+    fn near_malformed_returns_keyword_or_none_path() {
+        let p = parse_query("真如 NEAR/").unwrap();
+        assert_ne!(p.mode, "near");
+        let p2 = parse_query("NEAR/8 缘起").unwrap();
+        assert_ne!(p2.mode, "near");
+        let p3 = parse_query("真如 NEAR/xx 缘起").unwrap();
+        assert_ne!(p3.mode, "near");
+    }
+
+    #[test]
+    fn near_missing_right_term_errors() {
+        let err = parse_query("真如 NEAR/8 -外道").unwrap_err();
+        assert!(err.to_string().contains("requires a term"), "err={err}");
+    }
+
+    #[test]
+    fn not_exclusion_keyword() {
+        let p = parse_query("空性 NOT 外道").unwrap();
+        assert_eq!(p.mode, "keyword");
+        assert_eq!(p.terms, vec!["空性"]);
+        assert_eq!(p.excluded, vec!["外道"]);
+    }
+
+    #[test]
+    fn not_exclusion_with_dash_in_head_and_tail() {
+        let p = parse_query("空性-边见 NOT 外道-戏论").unwrap();
+        assert_eq!(p.mode, "keyword");
+        assert_eq!(p.terms, vec!["空性"]);
+        assert!(p.excluded.iter().any(|e| e == "边见"));
+        assert!(p.excluded.iter().any(|e| e == "外道"));
+        assert!(p.excluded.iter().any(|e| e == "戏论"));
+    }
+
+    #[test]
+    fn not_with_empty_excluded_falls_through() {
+        let p = parse_query("空性 NOT ").unwrap();
+        assert_eq!(p.mode, "keyword");
+        assert!(p.excluded.is_empty());
+    }
+
+    #[test]
+    fn dash_only_trailing_empty_is_keyword() {
+        let p = parse_query("空性-").unwrap();
+        assert_eq!(p.mode, "keyword");
+        assert!(p.excluded.is_empty() || p.terms == vec!["空性"]);
+    }
+
+    #[test]
+    fn multi_dash_exclusions() {
+        let p = parse_query("空性-外道-戏论").unwrap();
+        assert_eq!(p.terms, vec!["空性"]);
+        assert_eq!(p.excluded, vec!["外道", "戏论"]);
+    }
 }
