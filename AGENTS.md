@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **Scaffold state (2026-09):** parse/index/search are stubs. Search without `--json`/`--explain` exits 2; `--json` today dumps the **Command**, not hits. The Command→Hits JSON flip is atomic at L-search, not before.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
 
@@ -16,15 +16,15 @@ Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer
 ```
 cbeta-cli/
 ├── Cargo.toml              # workspace; clap pinned =4.5.23
-├── crates/cbeta-core/      # Command / Hit / Filters / parse_query  ← only real logic
-├── crates/cbeta-parse/     # TEI P5 stub
-├── crates/cbeta-index/     # Tantivy stub; default dir ~/.cbeta/
-├── crates/cbeta-search/    # keyword/near/verify stub
+├── crates/cbeta-core/      # Command / Hit / Filters / parse_query
+├── crates/cbeta-parse/     # TEI P5 + 繁简/异体/缺字/去标点
+├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/
+├── crates/cbeta-search/    # keyword/phrase (near Boolean AND in P0; no span confirm)
 ├── crates/cbeta-cli/       # bin name `cbeta`; clap → Command; tests/ = CLI contracts
 └── docs/                   # search-modes.md, human-ux.md, roadmap.md
 ```
 
-Crate graph: only `cbeta-cli` → `cbeta-core` is wired. Parse/index/search are not depended on yet; wire them when L-search/L-index land. Data/scripts stay in cbeta-corpus. Never commit `.omo/` or `.codegraph/`.
+Crate graph: `cbeta-cli` → `cbeta-core` + `cbeta-parse` + `cbeta-index` + `cbeta-search`. Data/scripts stay in cbeta-corpus. Never commit `.omo/` or `.codegraph/`.
 
 ## TOOLCHAIN / DEPS
 
@@ -44,24 +44,54 @@ Crate graph: only `cbeta-cli` → `cbeta-core` is wired. Parse/index/search are 
 
 Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account as a **Signing key** (Settings → SSH and GPG keys). An authentication key does not count until it is also added as a signing key. Never `--no-gpg-sign`.
 
-## TESTS (dual-tier + inline)
+## TESTS (dual-tier + inline + local usability)
+
+`cargo test` is **necessary but not sufficient**. A slice is not closed until a scholar-shaped run of the real `cbeta` binary succeeds against a real (mini) index. Agents must not claim P0/P1 done from unit tests alone.
+
+### Automated (CI)
 
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
-- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: **runs in CI**; asserts today's scaffold behavior (Command dump, exit 2).
-- `crates/cbeta-cli/tests/cli_product_hits.rs`: `#[ignore = "L-search"]`; the future product contract, expected to fail until L-search.
+- `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`). This **locks** the recipes; it does **not** replace the local protocol below.
+- `crates/cbeta-cli/tests/cli_product_hits.rs`: product JSON hits (not ignored).
+- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. `verify` / `serve` still Command-dump / exit 2; search / get / catalog / info / build are product.
 - Workspace **line** coverage ≥95 via `cargo llvm-cov` (command in COMMANDS).
 - CI exists: `.github/workflows/ci.yml`.
 
-## KNOWN SCAFFOLD BUG (do not freeze)
+### Local usability protocol (mandatory before claiming done)
 
-`main.rs` runs `parse_query` as a **global pre-step** on any `q`, so `verify <text>`, `get <line_id>` and `build --scope` all pass through search-query parsing. This is a scaffold bug. Do not treat it as product protocol; do not add tests that lock it in.
+Run the real binary as a 学者 would. Record **command, env, stdout, stderr, exit** for each step. Same recipe twice when the surface has both: TTY (no `--json`) and `--json`.
+
+1. Isolate: `CBETA_CORPUS` = in-repo `crates/cbeta-cli/tests/fixtures/mini`, `CBETA_INDEX` = a temp dir, `NO_COLOR=1`. Do **not** require sibling cbeta-corpus or `~/.cbeta` for P0.
+2. Build: `cbeta build --scope ci-minimal` → exit 0.
+3. P0 scholar recipes against that index:
+   - bare `cbeta 真性有为空` → TTY has rank, `T30n1578_p0268b21`, title 大乘掌珍論
+   - `cbeta search --json 真性有为空` → `hits[]` with `line_id` / `work_id` / `title` / `text_raw` / `citation` / `score` / `cbeta_tag`
+   - no-hit (`xyzzy-not-in-corpus`) → exit 1
+   - `cbeta catalog --author 玄奘` lists T1578
+   - `cbeta catalog --type lun --canon T`
+   - `cbeta info`
+   - `cbeta search --mode phrase '缘生故如幻'` hits T1578
+   - `cbeta get T30n1578_p0268b21` exit 0; ghost `T30n1578_p0268a12` exit 1
+4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini.
+5. Keep a transcript in the session. Do not claim “usable” from `cargo test` alone.
+
+### Not P0 (do not lock as product)
+
+- `verify` / `serve` remain scaffold.
+- `--explain --json` still dumps Command.
+- NEAR char-span confirm, `get -C`, `--script` / `--window` are P1.
+
+## PARSE SCOPE (do not freeze the old bug)
+
+`parse_query` runs **only** on `Action::Search`. `verify` / `get` / `build` keep raw `q`. Do not add tests that send those through search-query parsing.
 
 ## CLI SURFACE (today)
 
 - clap subcommands: Search, Verify, Get, Catalog, Info, Build, Serve. `Action::Read` / `Action::Cite` exist on the type only, not in clap.
 - Bare `cbeta 色即是空` is search (no-subcommand → `Action::Search`).
+- `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
 - Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**.
-- TTY default human; pipe → JSONL; `--json` never default. `NO_COLOR=1` / non-TTY drop color.
+- TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.
 
 ## QUERY DSL (contract in docs/search-modes.md)
 
@@ -93,9 +123,15 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 cargo check --workspace --all-targets
 cargo test --workspace
 cargo test -p cbeta-core -- plus_is_near_30 --exact
+cargo test -p cbeta-cli --test cli_usability
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 cargo llvm-cov --workspace --all-targets --locked --fail-under-lines 95 --show-missing-lines
+# isolate + scholar (see TESTS local usability protocol)
+CBETA_CORPUS=crates/cbeta-cli/tests/fixtures/mini CBETA_INDEX=/tmp/cbeta-use NO_COLOR=1 \
+  cargo run -p cbeta-cli -- build --scope ci-minimal
+CBETA_CORPUS=crates/cbeta-cli/tests/fixtures/mini CBETA_INDEX=/tmp/cbeta-use NO_COLOR=1 \
+  cargo run -p cbeta-cli -- 真性有为空
+# --explain --json still dumps Command (not hits)
 cargo run -p cbeta-cli -- search --explain --json '空性+缘生'
-# product (not implemented): cbeta build --scope taisho
 ```
