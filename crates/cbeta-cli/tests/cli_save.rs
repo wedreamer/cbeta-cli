@@ -105,16 +105,7 @@ fn save_last_then_from_get_index_with_context() {
     let get = run(
         &corpus,
         &index,
-        &[
-            "get",
-            "--from",
-            "last",
-            "--index",
-            "1",
-            "-C",
-            "4",
-            "--json",
-        ],
+        &["get", "--from", "last", "--index", "1", "-C", "4", "--json"],
     );
     let get_stdout = stdout_utf8(&get);
     let get_stderr = stderr_utf8(&get);
@@ -135,8 +126,8 @@ fn save_last_then_from_get_index_with_context() {
     );
 
     // Then: does not rebuild index (artifact_id unchanged on disk)
-    let raw_after = fs::read_to_string(&last_path)
-        .unwrap_or_else(|e| panic!("re-read last.json: {e}"));
+    let raw_after =
+        fs::read_to_string(&last_path).unwrap_or_else(|e| panic!("re-read last.json: {e}"));
     let last_after: serde_json::Value = serde_json::from_str(&raw_after)
         .unwrap_or_else(|e| panic!("re-parse last.json: {e}; raw={raw_after}"));
     assert_eq!(
@@ -191,8 +182,7 @@ fn from_last_artifact_mismatch_exits_2() {
         stderr_utf8(&save)
     );
     let last_path = last_json_path(&index);
-    let raw = fs::read_to_string(&last_path)
-        .unwrap_or_else(|e| panic!("read last.json: {e}"));
+    let raw = fs::read_to_string(&last_path).unwrap_or_else(|e| panic!("read last.json: {e}"));
     let mut last: serde_json::Value =
         serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse last.json: {e}; raw={raw}"));
     last["artifact_id"] = serde_json::Value::String("2026R2+deadbeef".to_string());
@@ -203,11 +193,7 @@ fn from_last_artifact_mismatch_exits_2() {
     .unwrap_or_else(|e| panic!("rewrite last.json: {e}"));
 
     // When: get --from last --index 1 against mismatched artifact
-    let out = run(
-        &corpus,
-        &index,
-        &["get", "--from", "last", "--index", "1"],
-    );
+    let out = run(&corpus, &index, &["get", "--from", "last", "--index", "1"]);
     let stdout = stdout_utf8(&out);
     let stderr = stderr_utf8(&out);
 
@@ -240,11 +226,7 @@ fn save_rejects_non_last_name() {
     let (corpus, index) = built();
 
     // When: search --save other (only `last` is allowed)
-    let out = run(
-        &corpus,
-        &index,
-        &["search", "--save", "other", QUERY],
-    );
+    let out = run(&corpus, &index, &["search", "--save", "other", QUERY]);
     let stdout = stdout_utf8(&out);
     let stderr = stderr_utf8(&out);
 
@@ -267,11 +249,7 @@ fn from_missing_last_json_exits_2() {
     );
 
     // When: get --from last --index 1
-    let out = run(
-        &corpus,
-        &index,
-        &["get", "--from", "last", "--index", "1"],
-    );
+    let out = run(&corpus, &index, &["get", "--from", "last", "--index", "1"]);
     let stdout = stdout_utf8(&out);
     let stderr = stderr_utf8(&out);
 

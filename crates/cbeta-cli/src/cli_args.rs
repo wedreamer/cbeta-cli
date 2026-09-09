@@ -578,22 +578,17 @@ mod tests {
 
     #[test]
     fn clap_parse_save_and_from_last_copy() {
-        let cli = Cli::try_parse_from([
-            "cbeta",
-            "search",
-            "--json",
-            "--save",
-            "last",
-            "真性有为空",
-        ])
-        .expect("parse search --save last");
+        let cli =
+            Cli::try_parse_from(["cbeta", "search", "--json", "--save", "last", "真性有为空"])
+                .expect("parse search --save last");
         assert_eq!(cli.save.as_deref(), Some("last"));
         let out = resolve(cli);
         assert_eq!(out.action, Action::Search);
         assert_eq!(out.save.as_deref(), Some("last"));
 
-        let cli = Cli::try_parse_from(["cbeta", "get", "--from", "last", "--index", "1", "-C", "4"])
-            .expect("parse get --from last");
+        let cli =
+            Cli::try_parse_from(["cbeta", "get", "--from", "last", "--index", "1", "-C", "4"])
+                .expect("parse get --from last");
         assert_eq!(cli.from.as_deref(), Some("last"));
         assert_eq!(cli.index, Some(1));
         let out = resolve(cli);
