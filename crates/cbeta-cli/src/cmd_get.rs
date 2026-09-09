@@ -283,13 +283,135 @@ mod tests {
         assert_eq!(run(&get), 0);
         get.context = Some(4);
         assert_eq!(run(&get), 0);
+        get.copy = true;
+        assert_eq!(run(&get), 0);
         get.q = Some("T30n1578_p0268a12".into());
         get.context = None;
+        get.copy = false;
         assert_eq!(run(&get), 1);
 
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = std::fs::remove_dir_all(&empty);
         let _ = std::fs::remove_dir_all(&index);
+    }
+
+    #[test]
+    fn run_unexpected_action_is_usage() {
+        let cmd = Command {
+            action: Action::Search,
+            q: Some("x".into()),
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(run(&cmd), 2);
+    }
+
+    #[test]
+    fn run_read_and_cite_paths() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("read-cite");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let build = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Plain,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(crate::cmd_build::run(&build), 0);
+
+        let mut read = Command {
+            action: Action::Read,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(run(&read), 2);
+        read.q = Some("T0235".into());
+        assert_eq!(run(&read), 2);
+        read.filters.juans = vec![1];
+        assert_eq!(run(&read), 0);
+        read.format = Format::Tty;
+        assert_eq!(run(&read), 0);
+        read.filters.juans = vec![99];
+        assert_eq!(run(&read), 1);
+
+        let mut cite = Command {
+            action: Action::Cite,
+            q: None,
+            filters: Filters::default(),
+            format: Format::Tty,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(run(&cite), 2);
+        cite.q = Some("T30n1578_p0268b21".into());
+        assert_eq!(run(&cite), 0);
+        cite.copy = true;
+        assert_eq!(run(&cite), 0);
+        cite.copy = false;
+        cite.q = Some("T30n1578_p0268a12".into());
+        assert_eq!(run(&cite), 1);
+
+        let empty = temp_dir("rc-empty");
+        std::env::set_var("CBETA_INDEX", &empty);
+        read.q = Some("T0235".into());
+        read.filters.juans = vec![1];
+        assert_eq!(run(&read), 2);
+        cite.q = Some("T30n1578_p0268b21".into());
+        assert_eq!(run(&cite), 2);
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&index);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn run_read_cite_index_root_error() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        let read = Command {
+            action: Action::Read,
+            q: Some("T0235".into()),
+            filters: Filters {
+                juans: vec![1],
+                ..Filters::default()
+            },
+            format: Format::Json,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(run(&read), 2);
+        let cite = Command {
+            action: Action::Cite,
+            q: Some("T30n1578_p0268b21".into()),
+            filters: Filters::default(),
+            format: Format::Tty,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(run(&cite), 2);
     }
 }
