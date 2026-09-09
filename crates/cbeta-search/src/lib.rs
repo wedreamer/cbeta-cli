@@ -10,10 +10,10 @@ mod query_build;
 mod span;
 mod verify;
 
-pub use context::{get_context, list_work_juan, GetContext};
+pub use context::{get_context, get_context_open, list_work_juan, list_work_juan_open, GetContext};
 pub use error::{Error, Result};
-pub use open::{active_artifact, open_search_index};
-pub use verify::verify;
+pub use open::{active_artifact, open_search_index, OpenIndex};
+pub use verify::{verify, verify_open};
 
 use cbeta_core::{Filters, Hit, ParsedQuery};
 use cbeta_parse::GaijiMap;
@@ -44,6 +44,16 @@ pub fn search(
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
     search_on(&reader, &fields, parsed, filters, limit)
+}
+
+/// Search using an already-open [`OpenIndex`] (HTTP / MCP shared path).
+pub fn search_open(
+    index: &OpenIndex,
+    parsed: &ParsedQuery,
+    filters: &Filters,
+    limit: usize,
+) -> Result<Vec<Hit>> {
+    search_on(&index.reader, &index.fields, parsed, filters, limit)
 }
 
 /// Run a parsed query on an already-open [`tantivy::IndexReader`].
@@ -107,6 +117,19 @@ fn confirm_hits(
 pub fn get_line(index_root: &std::path::Path, line_id: &str) -> Result<Option<Hit>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    get_line_on(&reader, &fields, line_id)
+}
+
+/// Lookup one line using an already-open [`OpenIndex`].
+pub fn get_line_open(index: &OpenIndex, line_id: &str) -> Result<Option<Hit>> {
+    get_line_on(&index.reader, &index.fields, line_id)
+}
+
+fn get_line_on(
+    reader: &tantivy::IndexReader,
+    fields: &cbeta_index::LineSchema,
+    line_id: &str,
+) -> Result<Option<Hit>> {
     let searcher = reader.searcher();
     let term = Term::from_field_text(fields.line_id, line_id);
     let q = TermQuery::new(term, IndexRecordOption::Basic);
@@ -115,7 +138,7 @@ pub fn get_line(index_root: &std::path::Path, line_id: &str) -> Result<Option<Hi
         return Ok(None);
     }
     let doc = searcher.doc(top[0].1)?;
-    Ok(Some(doc_to_hit(&doc, &fields, top[0].0)))
+    Ok(Some(doc_to_hit(&doc, fields, top[0].0)))
 }
 
 #[cfg(test)]

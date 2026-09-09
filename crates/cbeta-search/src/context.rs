@@ -9,7 +9,7 @@ use tantivy::{Searcher, TantivyDocument};
 
 use crate::error::Result;
 use crate::hitmap::doc_to_hit;
-use crate::open::open_search_index;
+use crate::open::{open_search_index, OpenIndex};
 
 /// Center line plus neighbors within `radius` on the sorted `line_id` axis.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,9 +34,27 @@ pub fn get_context(
 ) -> Result<Option<GetContext>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    get_context_on(&reader, &fields, line_id, radius)
+}
+
+/// Context using an already-open [`OpenIndex`].
+pub fn get_context_open(
+    index: &OpenIndex,
+    line_id: &str,
+    radius: u32,
+) -> Result<Option<GetContext>> {
+    get_context_on(&index.reader, &index.fields, line_id, radius)
+}
+
+fn get_context_on(
+    reader: &tantivy::IndexReader,
+    fields: &LineSchema,
+    line_id: &str,
+    radius: u32,
+) -> Result<Option<GetContext>> {
     let searcher = reader.searcher();
 
-    let Some(hit) = fetch_line(&searcher, &fields, line_id)? else {
+    let Some(hit) = fetch_line(&searcher, fields, line_id)? else {
         return Ok(None);
     };
 
@@ -47,7 +65,7 @@ pub fn get_context(
         }));
     }
 
-    let mut lines = collect_work_lines(&searcher, &fields, &hit.work_id, Some(hit.juan))?;
+    let mut lines = collect_work_lines(&searcher, fields, &hit.work_id, Some(hit.juan))?;
     lines.sort_by(|a, b| a.line_id.cmp(&b.line_id));
 
     let Some(pos) = lines.iter().position(|h| h.line_id == hit.line_id) else {
@@ -74,8 +92,22 @@ pub fn get_context(
 pub fn list_work_juan(index_root: &std::path::Path, work_id: &str, juan: u32) -> Result<Vec<Hit>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    list_work_juan_on(&reader, &fields, work_id, juan)
+}
+
+/// Juan listing using an already-open [`OpenIndex`].
+pub fn list_work_juan_open(index: &OpenIndex, work_id: &str, juan: u32) -> Result<Vec<Hit>> {
+    list_work_juan_on(&index.reader, &index.fields, work_id, juan)
+}
+
+fn list_work_juan_on(
+    reader: &tantivy::IndexReader,
+    fields: &LineSchema,
+    work_id: &str,
+    juan: u32,
+) -> Result<Vec<Hit>> {
     let searcher = reader.searcher();
-    let mut lines = collect_work_lines(&searcher, &fields, work_id, Some(u64::from(juan)))?;
+    let mut lines = collect_work_lines(&searcher, fields, work_id, Some(u64::from(juan)))?;
     lines.sort_by(|a, b| a.line_id.cmp(&b.line_id));
     Ok(lines)
 }

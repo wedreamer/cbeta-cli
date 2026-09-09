@@ -17,7 +17,7 @@ use tantivy::Searcher;
 
 use crate::error::Result;
 use crate::hitmap::doc_to_hit;
-use crate::open::open_search_index;
+use crate::open::{open_search_index, OpenIndex};
 
 /// Candidate pool size for similar n-gram recall.
 const SIMILAR_RECALL: usize = 80;
@@ -32,6 +32,19 @@ const SIMILAR_LIMIT: usize = 5;
 pub fn verify(index_root: &Path, quote: &str) -> Result<VerifyReport> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    verify_on(&reader, &fields, quote)
+}
+
+/// Verify using an already-open [`OpenIndex`].
+pub fn verify_open(index: &OpenIndex, quote: &str) -> Result<VerifyReport> {
+    verify_on(&index.reader, &index.fields, quote)
+}
+
+fn verify_on(
+    reader: &tantivy::IndexReader,
+    fields: &LineSchema,
+    quote: &str,
+) -> Result<VerifyReport> {
     let searcher = reader.searcher();
     let gaiji = GaijiMap::default();
     let norm = normalize_query(quote, &gaiji);
@@ -43,7 +56,7 @@ pub fn verify(index_root: &Path, quote: &str) -> Result<VerifyReport> {
         });
     }
 
-    if let Some(hit) = find_exact_by_hash(&searcher, &fields, &norm)? {
+    if let Some(hit) = find_exact_by_hash(&searcher, fields, &norm)? {
         return Ok(VerifyReport {
             is_original: true,
             exact_hit: Some(hit),
@@ -51,7 +64,7 @@ pub fn verify(index_root: &Path, quote: &str) -> Result<VerifyReport> {
         });
     }
 
-    let similar = find_similar(&searcher, &fields, &norm)?;
+    let similar = find_similar(&searcher, fields, &norm)?;
     Ok(VerifyReport {
         is_original: false,
         exact_hit: None,
