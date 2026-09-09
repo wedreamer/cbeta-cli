@@ -168,4 +168,90 @@ mod tests {
         assert!(matches!(get_line(&dir, "x"), Err(Error::NoIndex(_))));
         let _ = fs::remove_dir_all(&dir);
     }
+
+    fn line(id: &str, work: &str, text: &str) -> IndexableLine {
+        IndexableLine {
+            line: ParsedLine {
+                line_id: id.into(),
+                work_id: work.into(),
+                juan: 1,
+                text_raw: text.into(),
+                lb_n: "0001a01".into(),
+            },
+            title: "t".into(),
+            author: "a".into(),
+            citation: "c".into(),
+            cbeta_tag: "2026R2".into(),
+        }
+    }
+
+    fn write_lines(dir: &std::path::Path, tag: &str, lines: &[IndexableLine]) {
+        fs::create_dir_all(dir).unwrap();
+        write_artifact(dir, "2026R2", tag, lines, &GaijiMap::default()).unwrap();
+        fs::write(dir.join("CURRENT"), format!("2026R2-{tag}\n")).unwrap();
+    }
+
+    // Given close + far lines both containing 真如 and 缘起,
+    // When NEAR/16, Then only the close line survives char-span confirm.
+    #[test]
+    fn near_char_span_confirm_drops_far_pair() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-span-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let close = format!("真如{}缘起", "中".repeat(5));
+        let far = format!("真如{}缘起", "中".repeat(20));
+        write_lines(
+            &dir,
+            "span1",
+            &[
+                line("T01n0001_p0001a01", "T0001", &close),
+                line("T01n0001_p0001a02", "T0001", &far),
+            ],
+        );
+
+        let pq = cbeta_core::parse_query("真如 NEAR/16 缘起").expect("parse");
+        assert_eq!(pq.mode, "near");
+        assert_eq!(pq.within_chars, Some(16));
+        let hits = search(&dir, &pq, &Filters::default(), 10).expect("search");
+        let ids: Vec<_> = hits.iter().map(|h| h.line_id.as_str()).collect();
+        assert_eq!(ids, vec!["T01n0001_p0001a01"], "far pair (>16) must miss");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // Given reverse-order line, When before 真如*缘起, Then miss;
+    // forward within window hits.
+    #[test]
+    fn before_char_span_requires_order_and_window() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-before-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let forward = format!("真如{}缘起", "中".repeat(3));
+        let reverse = format!("缘起{}真如", "中".repeat(3));
+        write_lines(
+            &dir,
+            "bef1",
+            &[
+                line("T01n0001_p0001b01", "T0001", &forward),
+                line("T01n0001_p0001b02", "T0001", &reverse),
+            ],
+        );
+
+        let pq = cbeta_core::parse_query("真如*缘起").expect("parse");
+        assert_eq!(pq.mode, "before");
+        assert_eq!(pq.ordered, Some(true));
+        let hits = search(&dir, &pq, &Filters::default(), 10).expect("search");
+        let ids: Vec<_> = hits.iter().map(|h| h.line_id.as_str()).collect();
+        assert_eq!(ids, vec!["T01n0001_p0001b01"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
