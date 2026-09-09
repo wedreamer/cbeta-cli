@@ -32,6 +32,9 @@ pub const DEFAULT_LIMIT: usize = 50;
 const CONFIRM_OVERSAMPLE: usize = 8;
 
 /// Run a parsed query against the active artifact under `index_root`.
+///
+/// Opens the index once per call. Prefer [`search_on`] when reusing a reader
+/// (e.g. micro-benchmarks) so mmap open is not timed into every sample.
 pub fn search(
     index_root: &std::path::Path,
     parsed: &ParsedQuery,
@@ -40,9 +43,22 @@ pub fn search(
 ) -> Result<Vec<Hit>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    search_on(&reader, &fields, parsed, filters, limit)
+}
+
+/// Run a parsed query on an already-open [`tantivy::IndexReader`].
+///
+/// WHY: `bench` must time search only; reopening mmap every iteration wrecks p99.
+pub fn search_on(
+    reader: &tantivy::IndexReader,
+    fields: &cbeta_index::LineSchema,
+    parsed: &ParsedQuery,
+    filters: &Filters,
+    limit: usize,
+) -> Result<Vec<Hit>> {
     let searcher = reader.searcher();
     let gaiji = GaijiMap::default();
-    let query = build_query(parsed, &fields, &gaiji)?;
+    let query = build_query(parsed, fields, &gaiji)?;
     let want = limit.max(1);
     let fetch = if needs_span_confirm(&parsed.mode) {
         want.saturating_mul(CONFIRM_OVERSAMPLE).max(want)
@@ -51,9 +67,9 @@ pub fn search(
     };
     let top = searcher.search(&*query, &TopDocs::with_limit(fetch))?;
     if needs_span_confirm(&parsed.mode) {
-        return confirm_hits(&searcher, &fields, &top, filters, parsed, &gaiji, want);
+        return confirm_hits(&searcher, fields, &top, filters, parsed, &gaiji, want);
     }
-    let mut hits = collect_hits(&searcher, &fields, &top, filters)?;
+    let mut hits = collect_hits(&searcher, fields, &top, filters)?;
     if hits.len() > want {
         hits.truncate(want);
     }
