@@ -186,4 +186,34 @@ mod tests {
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn last_json_path_errors_without_home_or_index() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        let err = last_json_path().unwrap_err();
+        assert!(err.contains("HOME") || err.contains("CBETA_INDEX"));
+    }
+
+    #[test]
+    fn load_last_bad_json_errors() {
+        let _g = env_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-session-bad-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("last.json"), b"{not-json").unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+        let err = load_last().unwrap_err();
+        assert!(err.contains("parse") || err.contains("last.json"));
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

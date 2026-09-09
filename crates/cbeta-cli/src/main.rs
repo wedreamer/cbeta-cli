@@ -211,3 +211,106 @@ fn apply_from_last(out: &mut CliOut) -> Result<(), i32> {
     out.action = Action::Get;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use cbeta_core::{Filters, Hit};
+    use cli_resolve::CliOut;
+    use env_paths::env_lock;
+
+    fn empty_out() -> CliOut {
+        CliOut {
+            action: Action::Search,
+            q: None,
+            json: false,
+            mode: None,
+            explain: false,
+            plain: false,
+            script: None,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
+            save: None,
+            from: None,
+            hit_index: None,
+            shell: None,
+            http: None,
+        }
+    }
+
+    #[test]
+    fn validate_save_from_rejects_bad_names_and_non_search_save() {
+        let mut out = empty_out();
+        out.save = Some("other".into());
+        assert_eq!(validate_save_from(&out), Err(2));
+
+        out.save = Some("last".into());
+        out.action = Action::Get;
+        assert_eq!(validate_save_from(&out), Err(2));
+
+        out.action = Action::Search;
+        out.from = Some("other".into());
+        assert_eq!(validate_save_from(&out), Err(2));
+
+        out.from = Some("last".into());
+        assert_eq!(validate_save_from(&out), Ok(()));
+    }
+
+    #[test]
+    fn apply_from_last_requires_get_index_or_copy() {
+        let _g = env_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-main-from-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+
+        let mut out = empty_out();
+        out.from = Some("last".into());
+        out.action = Action::Get;
+        out.hit_index = Some(1);
+        assert_eq!(apply_from_last(&mut out), Err(2));
+
+        let session = session::SavedSearch {
+            query: "q".into(),
+            filters: Filters::default(),
+            hits: vec![Hit {
+                line_id: "T30n1578_p0268b21".into(),
+                work_id: "T1578".into(),
+                title: "t".into(),
+                author: "a".into(),
+                juan: 1,
+                text_raw: "x".into(),
+                citation: "c".into(),
+                score: 1.0,
+                cbeta_tag: "2026R2".into(),
+            }],
+            artifact_id: "missing-artifact".into(),
+        };
+        session::save_last(&session).unwrap();
+
+        out.hit_index = Some(1);
+        assert_eq!(apply_from_last(&mut out), Err(2));
+
+        out.action = Action::Search;
+        out.copy = true;
+        out.q = None;
+        assert_eq!(apply_from_last(&mut out), Err(2));
+
+        out.copy = false;
+        out.q = None;
+        assert_eq!(apply_from_last(&mut out), Err(2));
+
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
