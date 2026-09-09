@@ -9,7 +9,7 @@ cbeta 真性有为空
 数据仓库：[wedreamer/cbeta-corpus](https://github.com/wedreamer/cbeta-corpus)
 跟踪：[#1 v0.1 人用最小闭环](https://github.com/wedreamer/cbeta-cli/issues/1)
 
-> 状态（**2026-09-08**）：仓库还是脚手架。`Cargo.toml` workspace 已立，**尚不能真正搜索**。下面命令是产品契约，不是当前能跑通的 CLI。
+> 状态（**2026-09-09**）：P0 的 keyword/phrase、`get`、`catalog`、`info`、`build` 可对 `xml-p5@2026R2` 跑。下面整块仍是**产品契约**（`verify`、`get -C`、`--work`、NEAR、MCP 是 P1，未实现）。
 
 ## 安装（目标）
 
@@ -47,10 +47,10 @@ cbeta search '真如 NEAR/16 缘起' --work T1585
 cbeta verify '真性有为空，缘生故如幻，无为无起灭，不实若空华。'
 
 # 打开出处，像 rg -C
-cbeta get T30n1578_p0268a12 -C 4
+cbeta get T30n1578_p0268b21 -C 4
 cbeta read T0235 --juan 1
-cbeta cite T30n1578_p0268a12
-# (CBETA 2026.R2, T30, no. 1578, p. 268, a12)
+cbeta cite T30n1578_p0268b21
+# (CBETA 2026.R2, T30, no. 1578, p. 268, b21)
 
 # 先找书再搜正文
 cbeta catalog --author 玄奘 --type lun

@@ -61,7 +61,7 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 
 Run the real binary as a 学者 would. Record **command, env, stdout, stderr, exit** for each step. Same recipe twice when the surface has both: TTY (no `--json`) and `--json`.
 
-1. Isolate: `CBETA_CORPUS` = in-repo `crates/cbeta-cli/tests/fixtures/mini`, `CBETA_INDEX` = a temp dir, `NO_COLOR=1`. Do **not** require sibling cbeta-corpus or `~/.cbeta` for P0.
+1. Isolate CI mini: `CBETA_CORPUS` = in-repo `crates/cbeta-cli/tests/fixtures/mini`, `CBETA_INDEX` = a temp dir, `NO_COLOR=1`. Mini is **necessary** for CI, **not sufficient** to close P0.
 2. Build: `cbeta build --scope ci-minimal` → exit 0.
 3. P0 scholar recipes against that index:
    - bare `cbeta 真性有为空` → TTY has rank, `T30n1578_p0268b21`, title 大乘掌珍論
@@ -70,10 +70,10 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
    - `cbeta catalog --author 玄奘` lists T1578
    - `cbeta catalog --type lun --canon T`
    - `cbeta info`
-   - `cbeta search --mode phrase '缘生故如幻'` hits T1578
+   - `cbeta search --mode phrase '如幻緣生故'` hits `T30n1578_p0268b21`
    - `cbeta get T30n1578_p0268b21` exit 0; ghost `T30n1578_p0268a12` exit 1
 4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini.
-5. Keep a transcript in the session. Do not claim “usable” from `cargo test` alone.
+5. Closing P0 **also** requires a transcript against `CBETA_CORPUS=$HOME/.cbeta/corpus/2026R2` (real xml-p5, not mini). Record command/env/stdout/stderr/exit. Do not claim “usable” from `cargo test` alone.
 
 ### Not P0 (do not lock as product)
 
@@ -111,7 +111,7 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 ## PRODUCT SHAPE (target, mostly unimplemented)
 
-- `line_id`: `T31n1585_p0001a12` (canon+vol `n` work `_p` page col line). Citation: `(CBETA 2026.R2, T30, no. 1578, p. 268, a12)`.
+- `line_id`: `T31n1585_p0001a12` (canon+vol `n` work `_p` page col line). Citation: `(CBETA 2026.R2, T30, no. 1578, p. 268, b21)`.
 - Human hit line: rank, line_id, title, 作译者, juan, highlighted snippet.
 - Artifact id `{cbeta_tag}+{scope_hash}` e.g. `2026R2+a3f91c2e`. Scope change ⇒ rebuild.
 - P0 fixtures in roadmap: T0235 / T1578 / T1585 must emit `line_id`.
