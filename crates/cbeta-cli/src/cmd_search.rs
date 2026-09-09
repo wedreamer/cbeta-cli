@@ -10,7 +10,8 @@ use crate::env_paths::index_root;
 /// Run search; exit 0 hits / 1 no-hit / 2 no-index or usage.
 ///
 /// `script`: `Some("s")` converts title/author/text for display only; never mutates `line_id`.
-pub fn run(cmd: &Command, script: Option<&str>) -> i32 {
+/// `save`: `Some("last")` writes RAW hits to `last.json` before display (empty hits still save).
+pub fn run(cmd: &Command, script: Option<&str>, save: Option<&str>) -> i32 {
     let Some(parsed) = cmd.parsed_query.as_ref() else {
         eprintln!("search requires a query");
         return 2;
@@ -35,6 +36,27 @@ pub fn run(cmd: &Command, script: Option<&str>) -> i32 {
             return 2;
         }
     };
+
+    // WHY: persist RAW engine hits (not display clones) so --from last stays index-faithful.
+    if save == Some("last") {
+        let artifact_id = match crate::cmd_catalog::load_info() {
+            Ok(info) => info.artifact_id,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        };
+        let session = crate::session::SavedSearch {
+            query: cmd.q.clone().unwrap_or_default(),
+            filters: cmd.filters.clone(),
+            hits: hits.clone(),
+            artifact_id,
+        };
+        if let Err(e) = crate::session::save_last(&session) {
+            eprintln!("{e}");
+            return 2;
+        }
+    }
 
     let display: Vec<Hit> = hits.iter().map(|h| display_hit(h, script)).collect();
 
@@ -210,7 +232,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd, None), 2);
+        assert_eq!(run(&cmd, None, None), 2);
     }
 
     #[test]
@@ -229,7 +251,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd, None), 2);
+        assert_eq!(run(&cmd, None, None), 2);
     }
 
     #[test]
@@ -248,7 +270,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd, None), 2);
+        assert_eq!(run(&cmd, None, None), 2);
         std::env::remove_var("CBETA_INDEX");
         let _ = std::fs::remove_dir_all(&index);
     }
@@ -267,18 +289,18 @@ mod tests {
                 context: None,
                 copy: false,
             };
-            assert_eq!(run(&cmd, None), 0);
+            assert_eq!(run(&cmd, None, None), 0);
             cmd.format = Format::Plain;
-            assert_eq!(run(&cmd, None), 0);
+            assert_eq!(run(&cmd, None, None), 0);
             cmd.format = Format::Tty;
-            assert_eq!(run(&cmd, None), 0);
+            assert_eq!(run(&cmd, None, None), 0);
             cmd.format = Format::Jsonl;
-            assert_eq!(run(&cmd, None), 0);
-            assert_eq!(run(&cmd, Some("s")), 0);
+            assert_eq!(run(&cmd, None, None), 0);
+            assert_eq!(run(&cmd, Some("s"), None), 0);
             let miss = cbeta_core::parse_query("完全不存在的词xyz").unwrap();
             cmd.parsed_query = Some(miss);
             cmd.format = Format::Json;
-            assert_eq!(run(&cmd, None), 1);
+            assert_eq!(run(&cmd, None, None), 1);
         });
     }
 

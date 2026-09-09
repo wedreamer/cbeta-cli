@@ -14,14 +14,15 @@ mod copy_fmt;
 mod env_paths;
 mod mcp;
 mod scope_io;
+mod session;
 
 use cbeta_core::{parse_query, Action, Command};
 use clap::Parser;
 
-use cli_args::{format_of, resolve, Cli};
+use cli_args::{format_of, resolve, Cli, CliOut};
 
 fn main() {
-    let out = resolve(Cli::parse());
+    let mut out = resolve(Cli::parse());
 
     // WHY: completion is clap-only; skip parse_query / Command build entirely.
     if out.action == Action::Completion {
@@ -31,6 +32,16 @@ fn main() {
                 eprintln!("internal: completion without shell");
                 std::process::exit(2);
             }
+        }
+    }
+
+    if let Err(code) = validate_save_from(&out) {
+        std::process::exit(code);
+    }
+
+    if out.from.as_deref() == Some("last") {
+        if let Err(code) = apply_from_last(&mut out) {
+            std::process::exit(code);
         }
     }
 
@@ -66,8 +77,8 @@ fn main() {
 
     let cmd = Command {
         action: out.action,
-        q: out.q,
-        filters: out.filters,
+        q: out.q.clone(),
+        filters: out.filters.clone(),
         format: format_of(out.json, out.plain),
         explain: out.explain,
         parsed_query: parsed,
@@ -96,7 +107,9 @@ fn main() {
                 );
             }
         }
-        Action::Search => std::process::exit(cmd_search::run(&cmd, out.script.as_deref())),
+        Action::Search => {
+            std::process::exit(cmd_search::run(&cmd, out.script.as_deref(), out.save.as_deref()))
+        }
         Action::Get | Action::Read | Action::Cite => std::process::exit(cmd_get::run(&cmd)),
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
@@ -106,4 +119,84 @@ fn main() {
         // Handled before Command construction; unreachable here.
         Action::Completion => std::process::exit(2),
     }
+}
+
+/// Reject unknown `--save` / `--from` names and `--save` outside Search.
+fn validate_save_from(out: &CliOut) -> Result<(), i32> {
+    if let Some(name) = out.save.as_deref() {
+        if name != "last" {
+            eprintln!("--save only supports 'last' (got {name})");
+            return Err(2);
+        }
+        if out.action != Action::Search {
+            eprintln!("--save is only valid with search");
+            return Err(2);
+        }
+    }
+    if let Some(name) = out.from.as_deref() {
+        if name != "last" {
+            eprintln!("--from only supports 'last' (got {name})");
+            return Err(2);
+        }
+    }
+    Ok(())
+}
+
+/// Resolve `--from last` into a Get of the chosen hit's `line_id`.
+///
+/// WHY: never re-runs search; refuses when `artifact_id` no longer matches the
+/// active index so a rebuild cannot silently open a stale line.
+fn apply_from_last(out: &mut CliOut) -> Result<(), i32> {
+    let session = match session::load_last() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            return Err(2);
+        }
+    };
+
+    let info = match cmd_catalog::load_info() {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("{e}");
+            return Err(2);
+        }
+    };
+    if session.artifact_id != info.artifact_id {
+        eprintln!("index changed; re-run search");
+        return Err(2);
+    }
+
+    let n = if out.action == Action::Get {
+        match out.hit_index {
+            Some(n) => n,
+            None => {
+                eprintln!("get --from last requires --index <n>");
+                return Err(2);
+            }
+        }
+    } else if out.copy {
+        match out.q.as_deref().and_then(|s| s.parse::<u32>().ok()) {
+            Some(n) => n,
+            None => {
+                eprintln!("--from last --copy requires a 1-based hit index");
+                return Err(2);
+            }
+        }
+    } else {
+        eprintln!("--from last requires get --index <n> or --copy <n>");
+        return Err(2);
+    };
+
+    let hit = match session::pick_hit(&session, n) {
+        Ok(h) => h,
+        Err(code) => {
+            eprintln!("hit index {n} out of range ({} hits)", session.hits.len());
+            return Err(code);
+        }
+    };
+
+    out.q = Some(hit.line_id.clone());
+    out.action = Action::Get;
+    Ok(())
 }

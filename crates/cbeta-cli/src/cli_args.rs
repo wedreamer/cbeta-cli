@@ -36,6 +36,18 @@ pub struct Cli {
     /// Display script: `s` 简体, `t` 繁體. Unset keeps default 繁體.
     #[arg(long, global = true, value_parser = ["s", "t"])]
     pub script: Option<String>,
+    /// Persist search hits as `last.json` (`last` only).
+    #[arg(long, global = true)]
+    pub save: Option<String>,
+    /// Load a prior `--save last` session (`last` only).
+    #[arg(long, global = true)]
+    pub from: Option<String>,
+    /// 1-based hit index within a saved session (with `--from`).
+    #[arg(long, global = true)]
+    pub index: Option<u32>,
+    /// Print notes-ready citation block to stdout (no OS clipboard).
+    #[arg(long, global = true)]
+    pub copy: bool,
 }
 
 #[derive(Subcommand)]
@@ -47,13 +59,11 @@ pub enum Cmds {
         text: String,
     },
     Get {
-        line_id: String,
+        /// Line id; optional when `--from last --index N` supplies the hit.
+        line_id: Option<String>,
         /// Neighbor radius on sorted `line_id` (like `rg -C`).
         #[arg(short = 'C', long = "context", default_value_t = 0)]
         context: u32,
-        /// Print notes-ready citation block to stdout (no OS clipboard).
-        #[arg(long)]
-        copy: bool,
     },
     /// List lines of a work (optionally one juan) in `line_id` order.
     Read {
@@ -99,8 +109,14 @@ pub struct CliOut {
     pub filters: Filters,
     /// `-C` / `--context` for Get.
     pub context: u32,
-    /// `--copy` for Get.
+    /// `--copy` (global); notes block on stdout, no OS clipboard.
     pub copy: bool,
+    /// `--save` name (`last` only once validated in main).
+    pub save: Option<String>,
+    /// `--from` name (`last` only once validated in main).
+    pub from: Option<String>,
+    /// `--index` 1-based hit rank within a saved session.
+    pub hit_index: Option<u32>,
     /// Target shell for [`Action::Completion`]; kept here so cbeta-core stays clap-free.
     pub shell: Option<clap_complete::Shell>,
 }
@@ -122,64 +138,89 @@ fn merge_filters(
     }
 }
 
+/// Shared transport flags copied onto every [`CliOut`] branch.
+fn transport(cli: &Cli) -> (bool, Option<String>, bool, bool, Option<String>) {
+    (
+        cli.json,
+        cli.mode.clone(),
+        cli.explain,
+        cli.plain,
+        cli.script.clone(),
+    )
+}
+
+fn session_flags(cli: &Cli) -> (bool, Option<String>, Option<String>, Option<u32>) {
+    (cli.copy, cli.save.clone(), cli.from.clone(), cli.index)
+}
+
 /// Map clap parse result to action + flags + filters.
 pub fn resolve(cli: Cli) -> CliOut {
+    let (json, mode, explain, plain, script) = transport(&cli);
+    let (copy, save, from, hit_index) = session_flags(&cli);
     let filters = merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles);
     match cli.command {
         None => CliOut {
             action: Action::Search,
             q: cli.query,
-            json: cli.json,
-            mode: cli.mode,
-            explain: cli.explain,
-            plain: cli.plain,
-            script: cli.script,
+            json,
+            mode,
+            explain,
+            plain,
+            script,
             filters,
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Search { q }) => CliOut {
             action: Action::Search,
             q,
-            json: cli.json,
-            mode: cli.mode,
-            explain: cli.explain,
-            plain: cli.plain,
-            script: cli.script,
+            json,
+            mode,
+            explain,
+            plain,
+            script,
             filters,
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Verify { text }) => CliOut {
             action: Action::Verify,
             q: Some(text),
-            json: cli.json,
+            json,
             mode: None,
-            explain: cli.explain,
-            plain: cli.plain,
-            script: cli.script,
+            explain,
+            plain,
+            script,
             filters: Filters::default(),
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
-        Some(Cmds::Get {
-            line_id,
-            context,
-            copy,
-        }) => CliOut {
+        Some(Cmds::Get { line_id, context }) => CliOut {
             action: Action::Get,
-            q: Some(line_id),
-            json: cli.json,
+            q: line_id,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
-            script: cli.script,
+            plain,
+            script,
             filters: Filters::default(),
             context,
             copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Read { work, juan }) => {
@@ -192,80 +233,98 @@ pub fn resolve(cli: Cli) -> CliOut {
             CliOut {
                 action: Action::Read,
                 q: Some(work),
-                json: cli.json,
+                json,
                 mode: None,
                 explain: false,
-                plain: cli.plain,
-                script: cli.script,
+                plain,
+                script,
                 filters,
                 context: 0,
-                copy: false,
+                copy,
+                save,
+                from,
+                hit_index,
                 shell: None,
             }
         }
         Some(Cmds::Cite { line_id }) => CliOut {
             action: Action::Cite,
             q: Some(line_id),
-            json: cli.json,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
-            script: cli.script,
+            plain,
+            script,
             filters: Filters::default(),
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Catalog) => CliOut {
             action: Action::Catalog,
             q: None,
-            json: cli.json,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
-            script: cli.script,
+            plain,
+            script,
             filters,
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Info) => CliOut {
             action: Action::Info,
             q: None,
-            json: cli.json,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
-            script: cli.script,
+            plain,
+            script,
             filters: Filters::default(),
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Build { scope }) => CliOut {
             action: Action::Build,
             q: scope,
-            json: cli.json,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
+            plain,
             script: None,
             filters: Filters::default(),
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Bench { scope }) => CliOut {
             action: Action::Bench,
             q: scope,
-            json: cli.json,
+            json,
             mode: None,
             explain: false,
-            plain: cli.plain,
-            script: cli.script,
+            plain,
+            script,
             filters: Filters::default(),
             context: 0,
-            copy: false,
+            copy,
+            save,
+            from,
+            hit_index,
             shell: None,
         },
         Some(Cmds::Serve) => CliOut {
@@ -279,6 +338,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            save: None,
+            from: None,
+            hit_index: None,
             shell: None,
         },
         Some(Cmds::Completion { shell }) => CliOut {
@@ -292,6 +354,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             filters: Filters::default(),
             context: 0,
             copy: false,
+            save: None,
+            from: None,
+            hit_index: None,
             shell: Some(shell),
         },
     }
@@ -326,6 +391,10 @@ mod tests {
             works: vec![],
             titles: vec![],
             script: None,
+            save: None,
+            from: None,
+            index: None,
+            copy: false,
         }
     }
 
@@ -362,9 +431,8 @@ mod tests {
             (Cmds::Verify { text: "t".into() }, Action::Verify, Some("t")),
             (
                 Cmds::Get {
-                    line_id: "L".into(),
+                    line_id: Some("L".into()),
                     context: 0,
-                    copy: false,
                 },
                 Action::Get,
                 Some("L"),
@@ -441,11 +509,11 @@ mod tests {
     fn resolve_get_clears_explain_keeps_context_copy() {
         let mut cli = base_cli();
         cli.command = Some(Cmds::Get {
-            line_id: "x".into(),
+            line_id: Some("x".into()),
             context: 4,
-            copy: true,
         });
         cli.explain = true;
+        cli.copy = true;
         let out = resolve(cli);
         assert!(!out.explain);
         assert_eq!(out.context, 4);
@@ -473,5 +541,71 @@ mod tests {
         cli.mode = Some("phrase".into());
         let out = resolve(cli);
         assert_eq!(out.mode.as_deref(), Some("phrase"));
+    }
+
+    #[test]
+    fn resolve_save_from_index_global_flags() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Search {
+            q: Some("空".into()),
+        });
+        cli.save = Some("last".into());
+        let out = resolve(cli);
+        assert_eq!(out.save.as_deref(), Some("last"));
+
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Get {
+            line_id: None,
+            context: 0,
+        });
+        cli.from = Some("last".into());
+        cli.index = Some(1);
+        let out = resolve(cli);
+        assert_eq!(out.from.as_deref(), Some("last"));
+        assert_eq!(out.hit_index, Some(1));
+        assert!(out.q.is_none());
+
+        let mut cli = base_cli();
+        cli.from = Some("last".into());
+        cli.copy = true;
+        cli.query = Some("1".into());
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Search);
+        assert!(out.copy);
+        assert_eq!(out.q.as_deref(), Some("1"));
+        assert_eq!(out.from.as_deref(), Some("last"));
+    }
+
+    #[test]
+    fn clap_parse_save_and_from_last_copy() {
+        let cli = Cli::try_parse_from([
+            "cbeta",
+            "search",
+            "--json",
+            "--save",
+            "last",
+            "真性有为空",
+        ])
+        .expect("parse search --save last");
+        assert_eq!(cli.save.as_deref(), Some("last"));
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Search);
+        assert_eq!(out.save.as_deref(), Some("last"));
+
+        let cli = Cli::try_parse_from(["cbeta", "get", "--from", "last", "--index", "1", "-C", "4"])
+            .expect("parse get --from last");
+        assert_eq!(cli.from.as_deref(), Some("last"));
+        assert_eq!(cli.index, Some(1));
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Get);
+        assert!(out.q.is_none());
+        assert_eq!(out.hit_index, Some(1));
+        assert_eq!(out.context, 4);
+
+        let cli = Cli::try_parse_from(["cbeta", "--from", "last", "--copy", "1"])
+            .expect("parse bare --from last --copy 1");
+        assert!(cli.copy);
+        assert_eq!(cli.from.as_deref(), Some("last"));
+        assert_eq!(cli.query.as_deref(), Some("1"));
     }
 }
