@@ -68,8 +68,8 @@ fn main() {
                 }
             } else if let Some(p) = &cmd.parsed_query {
                 println!(
-                    "mode={} terms={:?} within={:?}",
-                    p.mode, p.terms, p.within_chars
+                    "mode={} terms={:?} within={:?} ordered={:?}",
+                    p.mode, p.terms, p.within_chars, p.ordered
                 );
             }
         }
