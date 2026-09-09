@@ -17,7 +17,7 @@ use tantivy::collector::TopDocs;
 use tantivy::query::TermQuery;
 use tantivy::schema::{IndexRecordOption, Term};
 
-use crate::confirm::{confirm_near_before, needs_span_confirm};
+use crate::confirm::{confirm_candidate, needs_span_confirm};
 use crate::hitmap::{collect_hits, doc_text_norm, doc_to_hit};
 use crate::query_build::build_query;
 
@@ -76,7 +76,7 @@ fn confirm_hits(
             continue;
         }
         let text_norm = doc_text_norm(&doc, fields);
-        if confirm_near_before(&text_norm, parsed, gaiji) {
+        if confirm_candidate(&text_norm, parsed, gaiji) {
             hits.push(hit);
         }
     }

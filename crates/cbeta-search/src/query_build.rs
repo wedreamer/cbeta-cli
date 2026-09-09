@@ -28,9 +28,33 @@ pub fn build_query(
         return Ok(term_or_phrase(&raw, fields));
     }
     match parsed.mode.as_str() {
-        "keyword" | "wildcard" | "phrase" => {
+        "keyword" | "phrase" => {
             // Contiguous string → phrase of unigrams (positions are char indices).
             Ok(term_or_phrase(&norms[0], fields))
+        }
+        "wildcard" => {
+            // Recall: AND of literal segments around `?` (confirm enforces one char).
+            let raw = parsed
+                .terms
+                .first()
+                .map(|s| s.as_str())
+                .unwrap_or(&parsed.raw);
+            let parts: Vec<String> = raw
+                .split('?')
+                .map(|s| normalize_query(s, gaiji))
+                .filter(|s| !s.is_empty())
+                .collect();
+            if parts.is_empty() {
+                return Ok(term_or_phrase("", fields));
+            }
+            if parts.len() == 1 {
+                return Ok(term_or_phrase(&parts[0], fields));
+            }
+            let mut clauses = Vec::new();
+            for t in &parts {
+                clauses.push((Occur::Must, term_or_phrase(t, fields)));
+            }
+            Ok(Box::new(BooleanQuery::new(clauses)))
         }
         "near" | "before" => {
             // Recall only; [`crate::confirm`] enforces the window on text_norm.

@@ -10,9 +10,79 @@ use cbeta_parse::{normalize_query, GaijiMap};
 /// Default CBReader proximity window (normalized 汉字).
 pub const DEFAULT_WINDOW: u32 = 30;
 
-/// Whether this mode needs post-recall char-span confirm.
+/// Whether this mode needs post-recall confirm on stored `text_norm`.
 pub fn needs_span_confirm(mode: &str) -> bool {
-    matches!(mode, "near" | "before")
+    matches!(mode, "near" | "before" | "wildcard")
+}
+
+/// Confirm `?` wildcard: each `?` is exactly one normalized 汉字.
+///
+/// Pattern literals are split on `?` then normalized (so `?` is not stripped
+/// as punctuation). Sliding match over `text_norm`.
+pub fn confirm_wildcard(text_norm: &str, parsed: &ParsedQuery, gaiji: &GaijiMap) -> bool {
+    let pattern = parsed
+        .terms
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or(&parsed.raw);
+    let parts = wildcard_literal_parts(pattern, gaiji);
+    let qmarks = pattern.chars().filter(|c| *c == '?').count();
+    if parts.iter().all(|p| p.is_empty()) && qmarks == 0 {
+        return false;
+    }
+    matches_wildcard_parts(text_norm, &parts, qmarks)
+}
+
+/// Split `pattern` on `?`, normalize each literal (empty allowed at ends).
+pub fn wildcard_literal_parts(pattern: &str, gaiji: &GaijiMap) -> Vec<String> {
+    pattern
+        .split('?')
+        .map(|s| normalize_query(s, gaiji))
+        .collect()
+}
+
+fn matches_wildcard_parts(hay: &str, parts: &[String], qmarks: usize) -> bool {
+    // parts.len() == qmarks + 1 when pattern is well-formed.
+    let hay: Vec<char> = hay.chars().collect();
+    let part_chars: Vec<Vec<char>> = parts.iter().map(|p| p.chars().collect()).collect();
+    let lit_len: usize = part_chars.iter().map(|p| p.len()).sum();
+    let need = lit_len + qmarks;
+    if need == 0 || hay.len() < need {
+        return false;
+    }
+    // For each start offset, try to match parts with exactly one char per ?.
+    'start: for start in 0..=hay.len() - need {
+        let mut i = start;
+        for (pi, lit) in part_chars.iter().enumerate() {
+            if i + lit.len() > hay.len() {
+                continue 'start;
+            }
+            if hay[i..i + lit.len()] != lit[..] {
+                continue 'start;
+            }
+            i += lit.len();
+            if pi + 1 < part_chars.len() {
+                // one char for this ?
+                if i >= hay.len() {
+                    continue 'start;
+                }
+                i += 1;
+            }
+        }
+        if i == start + need {
+            return true;
+        }
+    }
+    false
+}
+
+/// Dispatch confirm for modes that need stored `text_norm` checks.
+pub fn confirm_candidate(text_norm: &str, parsed: &ParsedQuery, gaiji: &GaijiMap) -> bool {
+    match parsed.mode.as_str() {
+        "near" | "before" => confirm_near_before(text_norm, parsed, gaiji),
+        "wildcard" => confirm_wildcard(text_norm, parsed, gaiji),
+        _ => true,
+    }
 }
 
 /// Confirm near/before on one stored `text_norm` line.
@@ -224,5 +294,16 @@ mod tests {
         assert!(confirm_near_before(&text, &pq, &GaijiMap::default()));
         let far = norm(&format!("空性{}缘生", "中".repeat(35)));
         assert!(!confirm_near_before(&far, &pq, &GaijiMap::default()));
+    }
+
+    // Given/When/Then: ? is exactly one normalized char.
+    #[test]
+    fn wildcard_one_char_only() {
+        let g = GaijiMap::default();
+        let pq = parse_query("莲?色").expect("parse");
+        assert!(confirm_wildcard(&norm("莲華色"), &pq, &g));
+        assert!(confirm_wildcard(&norm("莲花色"), &pq, &g));
+        assert!(!confirm_wildcard(&norm("莲色"), &pq, &g));
+        assert!(!confirm_wildcard(&norm("莲XY色"), &pq, &g));
     }
 }
