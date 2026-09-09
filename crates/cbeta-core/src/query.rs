@@ -85,44 +85,38 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
         return Ok(parsed);
     }
     if raw.contains('+') {
-        let terms: Vec<String> = raw
-            .split('+')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        // RED scaffold: ordered/clauses filled in feat commit.
-        return Ok(ParsedQuery {
-            raw,
-            mode: "near".into(),
-            terms,
-            within_chars: Some(30),
-            wildcard: None,
-            ordered: None,
-            clauses: vec![],
-            boolean_op: None,
-            not_terms: vec![],
-        });
+        let terms = split_terms(&raw, '+');
+        return Ok(near_before_query(raw, "near", terms, 30, false));
     }
     if raw.contains('*') && !raw.contains('?') {
-        let terms: Vec<String> = raw
-            .split('*')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        return Ok(ParsedQuery {
-            raw,
-            mode: "before".into(),
-            terms,
-            within_chars: Some(30),
-            wildcard: None,
-            ordered: None,
-            clauses: vec![],
-            boolean_op: None,
-            not_terms: vec![],
-        });
+        let terms = split_terms(&raw, '*');
+        return Ok(near_before_query(raw, "before", terms, 30, true));
     }
-    // Boolean aliases: single operator among & / , ; - fills not_terms.
-    // Intentionally not implemented yet (RED tests).
+    // Boolean aliases after +/* so near/before win; before ? so `莲?色,莲花色` is OR.
+    let has_and = raw.contains('&');
+    let has_or = raw.contains(',');
+    if has_and && has_or {
+        return Err(ParseError(
+            "mixed & and , boolean operators; use one combinator".into(),
+        ));
+    }
+    if has_and {
+        let terms = split_terms(&raw, '&');
+        return Ok(boolean_query(raw, terms, Some("and"), vec![]));
+    }
+    if has_or {
+        let terms = split_terms(&raw, ',');
+        return Ok(boolean_query(raw, terms, Some("or"), vec![]));
+    }
+    if raw.contains('-') {
+        let parts = split_terms(&raw, '-');
+        if parts.is_empty() {
+            return Err(ParseError("empty NOT query".into()));
+        }
+        let terms = vec![parts[0].clone()];
+        let not_terms = parts[1..].to_vec();
+        return Ok(boolean_query(raw, terms, None, not_terms));
+    }
     if raw.contains('?') {
         return Ok(ParsedQuery {
             raw: raw.clone(),
@@ -149,24 +143,80 @@ pub fn parse_query(q: &str) -> Result<ParsedQuery, ParseError> {
     })
 }
 
-fn parse_near_like(raw: &str, token: &str, mode: &str, _ordered: bool) -> Option<ParsedQuery> {
+fn split_terms(raw: &str, sep: char) -> Vec<String> {
+    raw.split(sep)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn clauses_from_terms(terms: &[String], within: Option<u32>, ordered: Option<bool>) -> Vec<Clause> {
+    terms
+        .iter()
+        .map(|t| Clause {
+            text: t.clone(),
+            within_chars: within,
+            ordered,
+        })
+        .collect()
+}
+
+fn near_before_query(
+    raw: String,
+    mode: &str,
+    terms: Vec<String>,
+    within: u32,
+    ordered: bool,
+) -> ParsedQuery {
+    let clauses = clauses_from_terms(&terms, Some(within), Some(ordered));
+    ParsedQuery {
+        raw,
+        mode: mode.into(),
+        terms,
+        within_chars: Some(within),
+        wildcard: None,
+        ordered: Some(ordered),
+        clauses,
+        boolean_op: None,
+        not_terms: vec![],
+    }
+}
+
+fn boolean_query(
+    raw: String,
+    terms: Vec<String>,
+    boolean_op: Option<&str>,
+    not_terms: Vec<String>,
+) -> ParsedQuery {
+    let clauses = clauses_from_terms(&terms, None, None);
+    ParsedQuery {
+        raw,
+        mode: "boolean".into(),
+        terms,
+        within_chars: None,
+        wildcard: None,
+        ordered: None,
+        clauses,
+        boolean_op: boolean_op.map(str::to_string),
+        not_terms,
+    }
+}
+
+fn parse_near_like(raw: &str, token: &str, mode: &str, ordered: bool) -> Option<ParsedQuery> {
     let needle = format!(" {token}/");
     let idx = raw.find(&needle)?;
     let left = raw[..idx].trim().to_string();
     let rest = raw[idx + needle.len()..].trim();
     let (n, right) = rest.split_once(' ')?;
     let within: u32 = n.parse().ok()?;
-    Some(ParsedQuery {
-        raw: raw.to_string(),
-        mode: mode.into(),
-        terms: vec![left, right.trim().to_string()],
-        within_chars: Some(within),
-        wildcard: None,
-        ordered: None,
-        clauses: vec![],
-        boolean_op: None,
-        not_terms: vec![],
-    })
+    let terms = vec![left, right.trim().to_string()];
+    Some(near_before_query(
+        raw.to_string(),
+        mode,
+        terms,
+        within,
+        ordered,
+    ))
 }
 
 #[cfg(test)]
@@ -223,8 +273,6 @@ mod tests {
 
     #[test]
     fn reject_fullwidth_ops() {
-        // Fullwidth set: — ＋ ＊ ＆ ？ (＋ covered by reject_fullwidth_plus).
-        // Fullwidth comma ， is intentionally not locked here.
         for q in ["空性—缘生", "空性＊缘生", "空性＆缘生", "空性？缘生"] {
             assert!(parse_query(q).is_err(), "expected reject for {q}");
         }
@@ -236,14 +284,9 @@ mod tests {
         assert!(err.to_string().contains("fullwidth"), "Display was: {err}");
     }
 
-    // --- P1: ordered + clauses + boolean DSL (Given/When/Then) ---
-
     #[test]
     fn plus_near_fills_ordered_false_and_clauses() {
-        // Given: CBReader + near alias
-        // When: parse
         let p = parse_query("空性+缘生").unwrap();
-        // Then: unordered near with two clauses
         assert_eq!(p.ordered, Some(false));
         assert_eq!(p.clauses.len(), 2);
         assert_eq!(p.clauses[0].text, "空性");
@@ -254,9 +297,7 @@ mod tests {
 
     #[test]
     fn star_before_fills_ordered_true_and_clauses() {
-        // Given: * before alias
         let p = parse_query("空性*缘生").unwrap();
-        // Then
         assert_eq!(p.ordered, Some(true));
         assert_eq!(p.mode, "before");
         assert_eq!(p.clauses.len(), 2);
@@ -265,9 +306,7 @@ mod tests {
 
     #[test]
     fn near_n_fills_ordered_false_window_on_clauses() {
-        // Given: NEAR/16
         let p = parse_query("真如 NEAR/16 缘起").unwrap();
-        // Then
         assert_eq!(p.ordered, Some(false));
         assert_eq!(p.within_chars, Some(16));
         assert_eq!(p.clauses.len(), 2);
@@ -285,9 +324,7 @@ mod tests {
 
     #[test]
     fn amp_is_boolean_and() {
-        // Given: CBReader &
         let p = parse_query("佛陀&阿难").unwrap();
-        // Then
         assert_eq!(p.mode, "boolean");
         assert_eq!(p.boolean_op.as_deref(), Some("and"));
         assert_eq!(p.terms, vec!["佛陀", "阿难"]);
@@ -305,9 +342,7 @@ mod tests {
 
     #[test]
     fn dash_fills_not_terms() {
-        // Given: CBReader - EXCLUDE
         let p = parse_query("佛陀-佛陀曰").unwrap();
-        // Then: positive term + not_terms
         assert_eq!(p.mode, "boolean");
         assert_eq!(p.terms, vec!["佛陀"]);
         assert_eq!(p.not_terms, vec!["佛陀曰"]);
@@ -316,8 +351,6 @@ mod tests {
 
     #[test]
     fn mixed_amp_and_comma_is_parse_error() {
-        // Given: both & and ,
-        // When/Then: ParseError
         assert!(parse_query("A&B,C").is_err());
         assert!(parse_query("A,B&C").is_err());
     }
