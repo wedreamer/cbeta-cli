@@ -2,6 +2,7 @@
 
 mod citation;
 mod cli_args;
+mod cli_resolve;
 mod cmd_bench;
 mod cmd_build;
 mod cmd_catalog;
@@ -20,7 +21,8 @@ mod session;
 use cbeta_core::{parse_query, Action, Command};
 use clap::Parser;
 
-use cli_args::{format_of, resolve, Cli, CliOut};
+use cli_args::Cli;
+use cli_resolve::{format_of, resolve, CliOut};
 
 fn main() {
     // WHY: bare `cbeta` (args_os len == 1) is REPL even when stdin is a pipe;
