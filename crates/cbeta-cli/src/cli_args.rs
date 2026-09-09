@@ -86,7 +86,12 @@ pub enum Cmds {
         #[arg(long)]
         scope: Option<String>,
     },
-    Serve,
+    /// stdio MCP, or HTTP when `--http ADDR` is set.
+    Serve {
+        /// Bind address for HTTP (e.g. `127.0.0.1:1873` or `127.0.0.1:0`).
+        #[arg(long)]
+        http: Option<String>,
+    },
     /// Emit shell completion script to stdout (bash/zsh/fish/…).
     Completion {
         /// Target shell (`clap_complete::Shell` value_enum).
@@ -119,6 +124,8 @@ pub struct CliOut {
     pub hit_index: Option<u32>,
     /// Target shell for [`Action::Completion`]; kept here so cbeta-core stays clap-free.
     pub shell: Option<clap_complete::Shell>,
+    /// `serve --http ADDR`; None means stdio MCP.
+    pub http: Option<String>,
 }
 
 fn merge_filters(
@@ -174,6 +181,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Search { q }) => CliOut {
             action: Action::Search,
@@ -190,6 +198,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Verify { text }) => CliOut {
             action: Action::Verify,
@@ -206,6 +215,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Get { line_id, context }) => CliOut {
             action: Action::Get,
@@ -222,6 +232,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Read { work, juan }) => {
             let mut filters = filters;
@@ -245,6 +256,7 @@ pub fn resolve(cli: Cli) -> CliOut {
                 from,
                 hit_index,
                 shell: None,
+                http: None,
             }
         }
         Some(Cmds::Cite { line_id }) => CliOut {
@@ -262,6 +274,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Catalog) => CliOut {
             action: Action::Catalog,
@@ -278,6 +291,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Info) => CliOut {
             action: Action::Info,
@@ -294,6 +308,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Build { scope }) => CliOut {
             action: Action::Build,
@@ -310,6 +325,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
         Some(Cmds::Bench { scope }) => CliOut {
             action: Action::Bench,
@@ -326,8 +342,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             from,
             hit_index,
             shell: None,
+            http: None,
         },
-        Some(Cmds::Serve) => CliOut {
+        Some(Cmds::Serve { http }) => CliOut {
             action: Action::Serve,
             q: None,
             json: false,
@@ -342,6 +359,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from: None,
             hit_index: None,
             shell: None,
+            http,
         },
         Some(Cmds::Completion { shell }) => CliOut {
             action: Action::Completion,
@@ -358,6 +376,7 @@ pub fn resolve(cli: Cli) -> CliOut {
             from: None,
             hit_index: None,
             shell: Some(shell),
+            http: None,
         },
     }
 }
@@ -468,7 +487,7 @@ mod tests {
                 Action::Bench,
                 Some("s"),
             ),
-            (Cmds::Serve, Action::Serve, None),
+            (Cmds::Serve { http: None }, Action::Serve, None),
             (
                 Cmds::Completion {
                     shell: clap_complete::Shell::Bash,

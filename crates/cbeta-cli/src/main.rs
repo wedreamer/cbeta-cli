@@ -124,7 +124,7 @@ fn main() {
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify => std::process::exit(cmd_verify::run(&cmd)),
         Action::Bench => std::process::exit(cmd_bench::run(&cmd)),
-        Action::Serve => std::process::exit(cmd_serve::run()),
+        Action::Serve => std::process::exit(cmd_serve::run(out.http.as_deref())),
         // Handled before Command construction; unreachable here.
         Action::Completion => std::process::exit(2),
     }
