@@ -71,6 +71,11 @@ pub enum Cmds {
         #[arg(long)]
         scope: Option<String>,
     },
+    /// CLI-only micro-benchmark (keyword/phrase/near); not an MCP tool.
+    Bench {
+        #[arg(long)]
+        scope: Option<String>,
+    },
     Serve,
     /// Emit shell completion script to stdout (bash/zsh/fish/…).
     Completion {
@@ -250,6 +255,19 @@ pub fn resolve(cli: Cli) -> CliOut {
             copy: false,
             shell: None,
         },
+        Some(Cmds::Bench { scope }) => CliOut {
+            action: Action::Bench,
+            q: scope,
+            json: cli.json,
+            mode: None,
+            explain: false,
+            plain: cli.plain,
+            script: cli.script,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
+            shell: None,
+        },
         Some(Cmds::Serve) => CliOut {
             action: Action::Serve,
             q: None,
@@ -373,6 +391,13 @@ mod tests {
                     scope: Some("s".into()),
                 },
                 Action::Build,
+                Some("s"),
+            ),
+            (
+                Cmds::Bench {
+                    scope: Some("s".into()),
+                },
+                Action::Bench,
                 Some("s"),
             ),
             (Cmds::Serve, Action::Serve, None),

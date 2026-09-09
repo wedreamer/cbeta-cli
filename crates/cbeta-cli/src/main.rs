@@ -2,6 +2,7 @@
 
 mod citation;
 mod cli_args;
+mod cmd_bench;
 mod cmd_build;
 mod cmd_catalog;
 mod cmd_completion;
@@ -100,6 +101,7 @@ fn main() {
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify => std::process::exit(cmd_verify::run(&cmd)),
+        Action::Bench => std::process::exit(cmd_bench::run(&cmd)),
         Action::Serve => std::process::exit(cmd_serve::run()),
         // Handled before Command construction; unreachable here.
         Action::Completion => std::process::exit(2),
