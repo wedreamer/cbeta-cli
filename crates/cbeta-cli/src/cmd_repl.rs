@@ -15,11 +15,17 @@ use crate::session;
 /// Errors on individual lines print to stderr and keep the loop alive so a bad
 /// `:open` does not kill the session; only process-level failures (I/O) exit 2.
 pub fn run() -> i32 {
-    let mut filters = Filters::default();
     let stdin = io::stdin();
-    let mut stderr = io::stderr();
     let show_prompt = stdin.is_terminal();
-    let mut lines = stdin.lock().lines();
+    run_with(stdin.lock(), io::stderr(), show_prompt)
+}
+
+/// REPL loop over an injected reader/writer (production uses stdin/stderr).
+///
+/// `show_prompt` mirrors TTY detection so tests can force quiet mode.
+fn run_with(input: impl BufRead, mut stderr: impl Write, show_prompt: bool) -> i32 {
+    let mut filters = Filters::default();
+    let mut lines = input.lines();
 
     loop {
         if show_prompt && (write!(stderr, "> ").is_err() || stderr.flush().is_err()) {
@@ -214,4 +220,146 @@ fn open_hit(n: u32, copy: bool, stderr: &mut impl Write) -> Result<(), ()> {
         return Err(());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use crate::env_paths::env_lock;
+    use std::io::Cursor;
+
+    fn run_lines(input: &str) -> (i32, String) {
+        let mut err = Vec::new();
+        let code = run_with(Cursor::new(input.as_bytes()), &mut err, false);
+        (code, String::from_utf8_lossy(&err).into_owned())
+    }
+
+    #[test]
+    fn quit_and_empty_line() {
+        let (code, err) = run_lines("\n  \n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.is_empty());
+    }
+
+    #[test]
+    fn quit_alias_and_eof() {
+        assert_eq!(run_lines(":quit\n").0, 0);
+        assert_eq!(run_lines("").0, 0);
+    }
+
+    #[test]
+    fn unknown_colon_and_bare_colon() {
+        let (code, err) = run_lines(":foo\n:\n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.contains("unknown repl command: :foo"));
+        assert!(err.contains("unknown repl command: :"));
+    }
+
+    #[test]
+    fn scope_sets_work_and_missing_arg() {
+        let (code, err) = run_lines(":scope\n:scope T1578\n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.contains(":scope requires a work id"));
+    }
+
+    #[test]
+    fn open_copy_missing_and_zero() {
+        let (code, err) = run_lines(":open\n:open 0\n:copy\n:copy 0\n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.contains("requires a 1-based hit index"));
+        assert!(err.contains("hit index must be >= 1"));
+    }
+
+    #[test]
+    fn verify_empty_requires_quote() {
+        let (code, err) = run_lines(":verify\n:verify   \n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.contains(":verify requires a quote"));
+    }
+
+    #[test]
+    fn bare_query_parse_error_stays_in_loop() {
+        // Fullwidth ＋ is rejected by parse_query (Search-only path).
+        let (code, err) = run_lines("空性＋缘生\n:q\n");
+        assert_eq!(code, 0);
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn open_without_last_json_prints_and_continues() {
+        let _g = env_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-repl-open-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+        let (code, err) = run_lines(":open 1\n:q\n");
+        assert_eq!(code, 0);
+        assert!(err.contains("last.json"));
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn show_prompt_writes_gt() {
+        let mut err = Vec::new();
+        let code = run_with(Cursor::new(b":q\n" as &[u8]), &mut err, true);
+        assert_eq!(code, 0);
+        assert!(String::from_utf8_lossy(&err).contains('>'));
+    }
+
+    fn mini_corpus() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    }
+
+    fn temp_dir(prefix: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-repl-ut-{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn search_verify_open_copy_with_mini_index() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("idx");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let build = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Plain,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(crate::cmd_build::run(&build), 0);
+
+        let (code, err) = run_lines(
+            "真性有为空\n:open 99\n:open 1\n:copy 1\n:verify 真性有為空，如幻緣生故\n:q\n",
+        );
+        assert_eq!(code, 0, "{err}");
+        assert!(err.contains("out of range") || err.contains("hits"));
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&index);
+    }
 }
