@@ -7,6 +7,7 @@ mod cmd_build;
 mod cmd_catalog;
 mod cmd_completion;
 mod cmd_get;
+mod cmd_repl;
 mod cmd_search;
 mod cmd_serve;
 mod cmd_verify;
@@ -22,6 +23,12 @@ use clap::Parser;
 use cli_args::{format_of, resolve, Cli, CliOut};
 
 fn main() {
+    // WHY: bare `cbeta` (args_os len == 1) is REPL even when stdin is a pipe;
+    // any extra argv/flag stays clap Search/etc. (not REPL).
+    if std::env::args_os().len() == 1 {
+        std::process::exit(cmd_repl::run());
+    }
+
     let mut out = resolve(Cli::parse());
 
     // WHY: completion is clap-only; skip parse_query / Command build entirely.
@@ -107,9 +114,11 @@ fn main() {
                 );
             }
         }
-        Action::Search => {
-            std::process::exit(cmd_search::run(&cmd, out.script.as_deref(), out.save.as_deref()))
-        }
+        Action::Search => std::process::exit(cmd_search::run(
+            &cmd,
+            out.script.as_deref(),
+            out.save.as_deref(),
+        )),
         Action::Get | Action::Read | Action::Cite => std::process::exit(cmd_get::run(&cmd)),
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
