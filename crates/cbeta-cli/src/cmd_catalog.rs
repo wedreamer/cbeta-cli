@@ -70,7 +70,8 @@ pub fn run_info(cmd: &Command) -> i32 {
     }
 }
 
-fn load_info() -> Result<IndexInfo, String> {
+/// Load active index metadata (shared by CLI `info` and MCP `cbeta_index_info`).
+pub(crate) fn load_info() -> Result<IndexInfo, String> {
     let root = index_root()?;
     let art = active_artifact(&root).map_err(|e| e.to_string())?;
     let meta_path = art.join("cbeta-meta.json");
@@ -97,7 +98,8 @@ fn load_info() -> Result<IndexInfo, String> {
     ))
 }
 
-fn load_catalog_entries(filters: &Filters) -> Result<Vec<CatalogEntry>, String> {
+/// Load filtered catalog rows (shared by CLI `catalog` and MCP `cbeta_list_catalog`).
+pub(crate) fn load_catalog_entries(filters: &Filters) -> Result<Vec<CatalogEntry>, String> {
     let (path, tag, scope_hash) = resolve_catalog_path()?;
     let rows = read_catalog_rows(&path)?;
     let mut out = Vec::new();

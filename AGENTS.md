@@ -2,14 +2,14 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). **P1 L-verify landed:** `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`); hash(norm) exact + n-gram/alignment similar; exit 0 even when not original. `--explain --json` still dumps **Command** (parse dump, not hits). `serve` remains scaffold.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). **P1 L-verify landed:** `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`); hash(norm) exact + n-gram/alignment similar; exit 0 even when not original. `--explain --json` still dumps **Command** (parse dump, not hits). `serve` is stdio MCP (five tools); see `cli_mcp`.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
 
 ## AGENT LANGUAGE
 
 - 对用户优先说**简体中文**。代码、标识符、命令、路径、crate 名保持原文。
-- 与产品约定分开：经文查询输入简体、展示默认繁體，这是 intent。切换靠 `--script` / `--window`，均为 planned UX（`docs/human-ux.md` 规则 5–6），尚不在 clap 上，勿当作可用标志。不要把对话语言改成繁体。
+- 与产品约定分开：经文查询输入简体、展示默认繁體，这是 intent。`--script s|t` 已落地（display-only）；`--window` 仍为 planned UX（`docs/human-ux.md` 规则 5–6）。不要把对话语言改成繁体。
 
 ## STRUCTURE
 
@@ -53,7 +53,7 @@ Configure a local Git signing key (GPG or SSH) and bind it to the GitHub account
 - Inline `#[cfg(test)]` in the crate under test, e.g. `cargo test -p cbeta-core -- plus_is_near_30 --exact`.
 - `crates/cbeta-cli/tests/cli_usability.rs`: **runs in CI**; scholar recipes (build, TTY keyword, `--json` hit fields, no-hit 1, catalog `--author`/`--type`/`--canon`, info, `--mode phrase`, get known/ghost `line_id`, verify exact/variant JSON). This **locks** the recipes; it does **not** replace the local protocol below.
 - `crates/cbeta-cli/tests/cli_product_hits.rs`: product JSON hits (not ignored).
-- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. `serve` still exit 2; search / get / catalog / info / build / verify are product.
+- `crates/cbeta-cli/tests/cli_scaffold_contract.rs`: mixed. search / get / catalog / info / build / verify / serve are product; MCP handshake in `cli_mcp`.
 - Workspace **line** coverage ≥95 via `cargo llvm-cov` (command in COMMANDS).
 - CI exists: `.github/workflows/ci.yml`.
 
@@ -81,9 +81,8 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 ### Not product yet (do not lock)
 
-- `serve` remains scaffold.
 - `--explain --json` still dumps Command.
-- NEAR char-span confirm, `--script` / `--window` remain P1+.
+- NEAR char-span confirm, `--window` remain P1+.
 
 ## PARSE SCOPE (do not freeze the old bug)
 
@@ -95,8 +94,11 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 - Bare `cbeta 色即是空` is search (no-subcommand → `Action::Search`).
 - `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`.
 - `read <work> --juan <N>` lists lines; `cite <line_id>` prints citation; `--copy` prints notes block to stdout (no xclip/arboard).
+- `--work` / `--author` / `--type` / `--canon` / `--title` filter search and catalog.
+- `--script s|t`: display-only 简/繁; never mutates `line_id` / index keys.
 - `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
-- Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**. `verify` exits **0** for both original and not-original (check command); **2** no index.
+- `serve`: stdio MCP only (five tools); logs on stderr; no HTTP.
+- Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**. `verify` exits **0** for both original and not-original (check command); **2** no index. `serve` runs until client disconnect.
 - TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.
 
 ## QUERY DSL (contract in docs/search-modes.md)

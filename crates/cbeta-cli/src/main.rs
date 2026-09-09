@@ -6,9 +6,11 @@ mod cmd_build;
 mod cmd_catalog;
 mod cmd_get;
 mod cmd_search;
+mod cmd_serve;
 mod cmd_verify;
 mod copy_fmt;
 mod env_paths;
+mod mcp;
 mod scope_io;
 
 use cbeta_core::{parse_query, Action, Command};
@@ -86,9 +88,6 @@ fn main() {
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify => std::process::exit(cmd_verify::run(&cmd)),
-        Action::Serve => {
-            eprintln!("index not built yet; try: cbeta search --explain --json '空性+缘生'");
-            std::process::exit(2);
-        }
+        Action::Serve => std::process::exit(cmd_serve::run()),
     }
 }
