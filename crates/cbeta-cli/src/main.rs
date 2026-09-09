@@ -90,9 +90,5 @@ fn main() {
             eprintln!("index not built yet; try: cbeta search --explain --json '空性+缘生'");
             std::process::exit(2);
         }
-        _ => {
-            eprintln!("index not built yet; try: cbeta search --explain --json '空性+缘生'");
-            std::process::exit(2);
-        }
     }
 }
