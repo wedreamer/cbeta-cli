@@ -24,6 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 clap = { version = "=4.5.23", features = ["derive"] }
+clap_complete = { version = "=4.5.23" }
 tantivy = "0.22"
 quick-xml = "0.37"
 unicode-normalization = "0.1"
