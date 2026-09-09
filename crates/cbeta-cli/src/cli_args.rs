@@ -45,6 +45,22 @@ pub enum Cmds {
     },
     Get {
         line_id: String,
+        /// Neighbor radius on sorted `line_id` (like `rg -C`).
+        #[arg(short = 'C', long = "context", default_value_t = 0)]
+        context: u32,
+        /// Print notes-ready citation block; clipboard is best-effort.
+        #[arg(long)]
+        copy: bool,
+    },
+    /// List lines of a work (optionally one juan) in `line_id` order.
+    Read {
+        work: String,
+        #[arg(long)]
+        juan: Option<u32>,
+    },
+    /// Print CBETA citation string only.
+    Cite {
+        line_id: String,
     },
     Catalog,
     Info,
@@ -65,6 +81,10 @@ pub struct CliOut {
     pub explain: bool,
     pub plain: bool,
     pub filters: Filters,
+    /// `-C` / `--context` for Get.
+    pub context: u32,
+    /// `--copy` for Get.
+    pub copy: bool,
 }
 
 fn merge_filters(
@@ -86,6 +106,7 @@ fn merge_filters(
 
 /// Map clap parse result to action + flags + filters.
 pub fn resolve(cli: Cli) -> CliOut {
+    let filters = merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles);
     match cli.command {
         None => CliOut {
             action: Action::Search,
@@ -94,7 +115,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
-            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
+            filters,
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Search { q }) => CliOut {
             action: Action::Search,
@@ -103,7 +126,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: cli.mode,
             explain: cli.explain,
             plain: cli.plain,
-            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
+            filters,
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Verify { text }) => CliOut {
             action: Action::Verify,
@@ -113,8 +138,14 @@ pub fn resolve(cli: Cli) -> CliOut {
             explain: cli.explain,
             plain: cli.plain,
             filters: Filters::default(),
+            context: 0,
+            copy: false,
         },
-        Some(Cmds::Get { line_id }) => CliOut {
+        Some(Cmds::Get {
+            line_id,
+            context,
+            copy,
+        }) => CliOut {
             action: Action::Get,
             q: Some(line_id),
             json: cli.json,
@@ -122,6 +153,38 @@ pub fn resolve(cli: Cli) -> CliOut {
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
+            context,
+            copy,
+        },
+        Some(Cmds::Read { work, juan }) => {
+            let mut filters = filters;
+            if let Some(j) = juan {
+                if !filters.juans.contains(&j) {
+                    filters.juans.push(j);
+                }
+            }
+            CliOut {
+                action: Action::Read,
+                q: Some(work),
+                json: cli.json,
+                mode: None,
+                explain: false,
+                plain: cli.plain,
+                filters,
+                context: 0,
+                copy: false,
+            }
+        }
+        Some(Cmds::Cite { line_id }) => CliOut {
+            action: Action::Cite,
+            q: Some(line_id),
+            json: cli.json,
+            mode: None,
+            explain: false,
+            plain: cli.plain,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Catalog) => CliOut {
             action: Action::Catalog,
@@ -130,7 +193,9 @@ pub fn resolve(cli: Cli) -> CliOut {
             mode: None,
             explain: false,
             plain: cli.plain,
-            filters: merge_filters(cli.canon, cli.authors, cli.types, cli.works, cli.titles),
+            filters,
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Info) => CliOut {
             action: Action::Info,
@@ -140,6 +205,8 @@ pub fn resolve(cli: Cli) -> CliOut {
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Build { scope }) => CliOut {
             action: Action::Build,
@@ -149,6 +216,8 @@ pub fn resolve(cli: Cli) -> CliOut {
             explain: false,
             plain: cli.plain,
             filters: Filters::default(),
+            context: 0,
+            copy: false,
         },
         Some(Cmds::Serve) => CliOut {
             action: Action::Serve,
@@ -158,6 +227,8 @@ pub fn resolve(cli: Cli) -> CliOut {
             explain: false,
             plain: false,
             filters: Filters::default(),
+            context: 0,
+            copy: false,
         },
     }
 }
@@ -227,8 +298,25 @@ mod tests {
             (
                 Cmds::Get {
                     line_id: "L".into(),
+                    context: 0,
+                    copy: false,
                 },
                 Action::Get,
+                Some("L"),
+            ),
+            (
+                Cmds::Read {
+                    work: "T0235".into(),
+                    juan: Some(1),
+                },
+                Action::Read,
+                Some("T0235"),
+            ),
+            (
+                Cmds::Cite {
+                    line_id: "L".into(),
+                },
+                Action::Cite,
                 Some("L"),
             ),
             (Cmds::Catalog, Action::Catalog, None),
@@ -266,14 +354,30 @@ mod tests {
     }
 
     #[test]
-    fn resolve_get_clears_explain() {
+    fn resolve_get_clears_explain_keeps_context_copy() {
         let mut cli = base_cli();
         cli.command = Some(Cmds::Get {
             line_id: "x".into(),
+            context: 4,
+            copy: true,
         });
         cli.explain = true;
         let out = resolve(cli);
         assert!(!out.explain);
+        assert_eq!(out.context, 4);
+        assert!(out.copy);
+    }
+
+    #[test]
+    fn resolve_read_wires_juan_into_filters() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Read {
+            work: "T0235".into(),
+            juan: Some(1),
+        });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Read);
+        assert_eq!(out.filters.juans, vec![1]);
     }
 
     #[test]
