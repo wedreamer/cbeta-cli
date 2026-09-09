@@ -202,3 +202,162 @@ fn outcome_to_result(outcome: Result<serde_json::Value, String>) -> CallToolResu
         Err(msg) => CallToolResult::error(vec![ContentBlock::text(msg)]),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use crate::env_paths::env_lock;
+    use cbeta_core::{Action, Command, Filters, Format};
+    use serde_json::json;
+    use std::path::PathBuf;
+
+    fn mini_corpus() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-mcp-t-{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn build_mini(corpus: &std::path::Path, index: &std::path::Path) {
+        std::env::set_var("CBETA_CORPUS", corpus);
+        std::env::set_var("CBETA_INDEX", index);
+        let build = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Plain,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(crate::cmd_build::run(&build), 0);
+    }
+
+    #[test]
+    fn new_default_and_server_info() {
+        let a = CbetaMcp::new();
+        let b = CbetaMcp::default();
+        let _ = (
+            a.tool_router.list_all().len(),
+            b.tool_router.list_all().len(),
+        );
+        let info = CbetaMcp::new().get_info();
+        let text = format!("{info:?}");
+        assert!(
+            text.contains("tools") || text.contains("CBETA") || text.contains("instructions"),
+            "server info={text}"
+        );
+    }
+
+    #[test]
+    fn outcome_to_result_ok_and_err() {
+        let ok = outcome_to_result(Ok(json!({"hits": []})));
+        assert!(!ok.is_error.unwrap_or(true));
+        let err = outcome_to_result(Err("boom".into()));
+        assert!(err.is_error.unwrap_or(false));
+    }
+
+    #[test]
+    fn default_get_action_is_get() {
+        assert_eq!(default_get_action(), "get");
+    }
+
+    #[test]
+    fn tool_methods_smoke_with_mini_index() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("tools");
+        build_mini(&corpus, &index);
+        let mcp = CbetaMcp::new();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio test runtime");
+        rt.block_on(async {
+            let search = mcp
+                .cbeta_search(Parameters(SearchArgs {
+                    q: Some("真性有为空".into()),
+                    mode: None,
+                    clauses: None,
+                    work: None,
+                    author: None,
+                    canon: None,
+                    types: None,
+                    title: None,
+                }))
+                .await
+                .unwrap();
+            assert!(!search.is_error.unwrap_or(true));
+
+            let verify = mcp
+                .cbeta_verify_quote(Parameters(VerifyArgs {
+                    q: "真性有為空，如幻緣生故".into(),
+                }))
+                .await
+                .unwrap();
+            assert!(!verify.is_error.unwrap_or(true));
+
+            let get = mcp
+                .cbeta_get_passage(Parameters(GetPassageArgs {
+                    action: "get".into(),
+                    line_id: Some("T30n1578_p0268b21".into()),
+                    context: Some(1),
+                    work: None,
+                    juan: None,
+                }))
+                .await
+                .unwrap();
+            assert!(!get.is_error.unwrap_or(true));
+
+            let catalog = mcp
+                .cbeta_list_catalog(Parameters(CatalogArgs {
+                    work: Some(vec!["T1578".into()]),
+                    author: None,
+                    canon: Some("T".into()),
+                    types: None,
+                    title: None,
+                }))
+                .await
+                .unwrap();
+            assert!(!catalog.is_error.unwrap_or(true));
+
+            let info = mcp
+                .cbeta_index_info(Parameters(EmptyArgs {}))
+                .await
+                .unwrap();
+            assert!(!info.is_error.unwrap_or(true));
+
+            let bad = mcp
+                .cbeta_search(Parameters(SearchArgs {
+                    q: None,
+                    mode: None,
+                    clauses: None,
+                    work: None,
+                    author: None,
+                    canon: None,
+                    types: None,
+                    title: None,
+                }))
+                .await
+                .unwrap();
+            assert!(bad.is_error.unwrap_or(false));
+        });
+
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&index);
+    }
+}
