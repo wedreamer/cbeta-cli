@@ -188,4 +188,16 @@ mod tests {
         let _ = fields;
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn open_index_debug_shows_paths() {
+        let root = temp_root();
+        let _ = write_artifact(&root, "2026R2", "dbg", &sample(), &GaijiMap::default()).unwrap();
+        fs::write(root.join("CURRENT"), "2026R2-dbg\n").unwrap();
+        let open = OpenIndex::open(&root).unwrap();
+        let s = format!("{open:?}");
+        assert!(s.contains("OpenIndex"));
+        assert!(s.contains("root") || s.contains("artifact"));
+        let _ = fs::remove_dir_all(&root);
+    }
 }

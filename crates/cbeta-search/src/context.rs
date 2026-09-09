@@ -158,3 +158,81 @@ fn collect_work_lines(
     }
     Ok(hits)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use cbeta_index::{write_artifact, IndexableLine};
+    use cbeta_parse::{GaijiMap, ParsedLine};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn sample_lines() -> Vec<IndexableLine> {
+        let mk = |id: &str, juan: u64, raw: &str| IndexableLine {
+            line: ParsedLine {
+                line_id: id.into(),
+                work_id: "T1578".into(),
+                juan,
+                text_raw: raw.into(),
+                lb_n: id.rsplit('_').next().unwrap_or("").into(),
+            },
+            title: "t".into(),
+            author: "a".into(),
+            citation: "c".into(),
+            cbeta_tag: "2026R2".into(),
+        };
+        vec![
+            mk("T30n1578_p0268b20", 1, "前"),
+            mk("T30n1578_p0268b21", 1, "真性有為空"),
+            mk("T30n1578_p0268b22", 1, "後"),
+        ]
+    }
+
+    fn temp_root() -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-ctx-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn get_context_radius_zero_and_neighbors() {
+        let root = temp_root();
+        let _ =
+            write_artifact(&root, "2026R2", "c1", &sample_lines(), &GaijiMap::default()).unwrap();
+        fs::write(root.join("CURRENT"), "2026R2-c1\n").unwrap();
+
+        let z = get_context(&root, "T30n1578_p0268b21", 0)
+            .unwrap()
+            .expect("hit");
+        assert!(z.context.is_empty());
+
+        let w = get_context(&root, "T30n1578_p0268b21", 1)
+            .unwrap()
+            .expect("hit");
+        assert_eq!(w.context.len(), 2);
+
+        let open = OpenIndex::open(&root).unwrap();
+        let o = get_context_open(&open, "T30n1578_p0268b21", 1)
+            .unwrap()
+            .expect("hit");
+        assert_eq!(o.context.len(), 2);
+
+        let listed = list_work_juan(&root, "T1578", 1).unwrap();
+        assert_eq!(listed.len(), 3);
+        let listed2 = list_work_juan_open(&open, "T1578", 1).unwrap();
+        assert_eq!(listed2.len(), 3);
+
+        assert!(get_context(&root, "ghost-line", 1).unwrap().is_none());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+}
