@@ -1,7 +1,8 @@
-//! Keyword / phrase / near-as-AND search over a CBETA Tantivy index.
+//! Keyword / phrase / near (Boolean AND + char-span confirm) search.
 
 #![deny(missing_docs)]
 
+mod confirm;
 mod error;
 mod hitmap;
 mod open;
@@ -16,11 +17,15 @@ use tantivy::collector::TopDocs;
 use tantivy::query::TermQuery;
 use tantivy::schema::{IndexRecordOption, Term};
 
-use crate::hitmap::{collect_hits, doc_to_hit};
+use crate::confirm::{confirm_near_before, needs_span_confirm};
+use crate::hitmap::{collect_hits, doc_text_norm, doc_to_hit};
 use crate::query_build::build_query;
 
 /// Default max hits returned to the CLI.
 pub const DEFAULT_LIMIT: usize = 50;
+
+/// Oversample factor before char-span confirm cuts to `limit`.
+const CONFIRM_OVERSAMPLE: usize = 8;
 
 /// Run a parsed query against the active artifact under `index_root`.
 pub fn search(
@@ -34,8 +39,48 @@ pub fn search(
     let searcher = reader.searcher();
     let gaiji = GaijiMap::default();
     let query = build_query(parsed, &fields, &gaiji)?;
-    let top = searcher.search(&*query, &TopDocs::with_limit(limit.max(1)))?;
-    collect_hits(&searcher, &fields, &top, filters)
+    let want = limit.max(1);
+    let fetch = if needs_span_confirm(&parsed.mode) {
+        want.saturating_mul(CONFIRM_OVERSAMPLE).max(want)
+    } else {
+        want
+    };
+    let top = searcher.search(&*query, &TopDocs::with_limit(fetch))?;
+    if needs_span_confirm(&parsed.mode) {
+        return confirm_hits(&searcher, &fields, &top, filters, parsed, &gaiji, want);
+    }
+    let mut hits = collect_hits(&searcher, &fields, &top, filters)?;
+    if hits.len() > want {
+        hits.truncate(want);
+    }
+    Ok(hits)
+}
+
+fn confirm_hits(
+    searcher: &tantivy::Searcher,
+    fields: &cbeta_index::LineSchema,
+    top: &[(f32, tantivy::DocAddress)],
+    filters: &Filters,
+    parsed: &ParsedQuery,
+    gaiji: &GaijiMap,
+    limit: usize,
+) -> Result<Vec<Hit>> {
+    let mut hits = Vec::with_capacity(limit.min(top.len()));
+    for (score, addr) in top {
+        if hits.len() >= limit {
+            break;
+        }
+        let doc: tantivy::schema::TantivyDocument = searcher.doc(*addr)?;
+        let hit = doc_to_hit(&doc, fields, *score);
+        if !crate::hitmap::passes_filters(&hit, filters) {
+            continue;
+        }
+        let text_norm = doc_text_norm(&doc, fields);
+        if confirm_near_before(&text_norm, parsed, gaiji) {
+            hits.push(hit);
+        }
+    }
+    Ok(hits)
 }
 
 /// Lookup one line by exact `line_id` STRING field.

@@ -32,6 +32,14 @@ pub fn doc_to_hit(doc: &TantivyDocument, fields: &LineSchema, score: f32) -> Hit
     }
 }
 
+/// Stored normalized line text used for near/before char-span confirm.
+pub fn doc_text_norm(doc: &TantivyDocument, fields: &LineSchema) -> String {
+    doc.get_first(fields.text_norm)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// True when hit passes all non-empty filter axes (substring for author/title).
 pub fn passes_filters(hit: &Hit, filters: &Filters) -> bool {
     if !filters.works.is_empty() && !filters.works.iter().any(|w| w == &hit.work_id) {

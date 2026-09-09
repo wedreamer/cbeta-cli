@@ -8,7 +8,10 @@ use tantivy::schema::{IndexRecordOption, Term};
 
 use crate::error::Result;
 
-/// Build a Tantivy query. near/before = Boolean AND of terms (no char-span confirm in P0).
+/// Build a Tantivy recall query.
+///
+/// near/before = Boolean AND of each clause (char-span confirm is separate).
+/// boolean = Must / Should / MustNot from `boolean_op` / `not_terms`.
 pub fn build_query(
     parsed: &ParsedQuery,
     fields: &LineSchema,
@@ -30,15 +33,43 @@ pub fn build_query(
             Ok(term_or_phrase(&norms[0], fields))
         }
         "near" | "before" => {
-            // P0: Boolean AND of each term subquery (no window confirm yet).
+            // Recall only; [`crate::confirm`] enforces the window on text_norm.
             let mut clauses = Vec::new();
             for t in &norms {
                 clauses.push((Occur::Must, term_or_phrase(t, fields)));
             }
             Ok(Box::new(BooleanQuery::new(clauses)))
         }
+        "boolean" => Ok(build_boolean(parsed, &norms, fields, gaiji)),
         _ => Ok(term_or_phrase(&norms[0], fields)),
     }
+}
+
+fn build_boolean(
+    parsed: &ParsedQuery,
+    norms: &[String],
+    fields: &LineSchema,
+    gaiji: &GaijiMap,
+) -> Box<dyn Query> {
+    let mut clauses = Vec::new();
+    let occur = match parsed.boolean_op.as_deref() {
+        Some("or") => Occur::Should,
+        _ => Occur::Must,
+    };
+    for t in norms {
+        clauses.push((occur, term_or_phrase(t, fields)));
+    }
+    for t in &parsed.not_terms {
+        let n = normalize_query(t, gaiji);
+        if n.is_empty() {
+            continue;
+        }
+        clauses.push((Occur::MustNot, term_or_phrase(&n, fields)));
+    }
+    if clauses.is_empty() {
+        return term_or_phrase("", fields);
+    }
+    Box::new(BooleanQuery::new(clauses))
 }
 
 fn term_or_phrase(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
