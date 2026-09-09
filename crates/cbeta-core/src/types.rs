@@ -25,6 +25,8 @@ pub enum Action {
     Build,
     /// Serve MCP/HTTP over the same `Command` surface.
     Serve,
+    /// Emit a shell completion script (CLI-only; not an MCP tool).
+    Completion,
 }
 
 /// How results should be rendered.
