@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). `--explain --json` still dumps **Command** (parse dump, not hits). `verify` / `serve` remain scaffold.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
 
@@ -72,14 +72,16 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
    - `cbeta info`
    - `cbeta search --mode phrase '如幻緣生故'` hits `T30n1578_p0268b21`
    - `cbeta get T30n1578_p0268b21` exit 0; ghost `T30n1578_p0268a12` exit 1
-4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini.
-5. Closing P0 **also** requires a transcript against `CBETA_CORPUS=$HOME/.cbeta/corpus/2026R2` (real xml-p5, not mini). Record command/env/stdout/stderr/exit. Do not claim “usable” from `cargo test` alone.
+   - `cbeta get T30n1578_p0268b21 -C 4` TTY neighbors + citation; `--json` → `{ hit, before, after }`
+   - `cbeta read T0235 --juan 1`; `cbeta cite T30n1578_p0268b21`; `cbeta get … --copy` stdout block
+4. Mini corpus is **T0235 + T1578 only**. Do **not** assert `catalog --title 成唯識` or T1585 `line_id`s against mini. Mini T1578 has few lines — `-C 4` may return fewer than 4 neighbors.
+5. Closing P0/P1 **also** requires a transcript against `CBETA_CORPUS=$HOME/.cbeta/corpus/2026R2` (real xml-p5, not mini). Record command/env/stdout/stderr/exit. Do not claim “usable” from `cargo test` alone.
 
-### Not P0 (do not lock as product)
+### Not product yet (do not lock)
 
 - `verify` / `serve` remain scaffold.
 - `--explain --json` still dumps Command.
-- NEAR char-span confirm, `get -C`, `--script` / `--window` are P1.
+- NEAR char-span confirm, `--script` / `--window` remain P1+.
 
 ## PARSE SCOPE (do not freeze the old bug)
 
@@ -87,8 +89,10 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 ## CLI SURFACE (today)
 
-- clap subcommands: Search, Verify, Get, Catalog, Info, Build, Serve. `Action::Read` / `Action::Cite` exist on the type only, not in clap.
+- clap subcommands: Search, Verify, Get, Read, Cite, Catalog, Info, Build, Serve.
 - Bare `cbeta 色即是空` is search (no-subcommand → `Action::Search`).
+- `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`.
+- `read <work> --juan <N>` lists lines; `cite <line_id>` prints citation; `--copy` prints notes block to stdout (no xclip/arboard).
 - `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
 - Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**.
 - TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.

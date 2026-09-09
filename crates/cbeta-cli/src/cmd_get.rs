@@ -6,19 +6,10 @@ use cbeta_search::{get_context, get_line, list_work_juan, Error as SearchError, 
 use crate::copy_fmt::format_copy_block;
 use crate::env_paths::index_root;
 
-/// CLI-only get options (not yet on transport `Command`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct GetOpts {
-    /// `-C` / `--context` radius (sorted line_id neighbors).
-    pub context: u32,
-    /// `--copy`: print notes block and best-effort clipboard.
-    pub copy: bool,
-}
-
 /// Exit 0 found / 1 missing / 2 usage or index.
-pub fn run(cmd: &Command, opts: GetOpts) -> i32 {
+pub fn run(cmd: &Command) -> i32 {
     match cmd.action {
-        Action::Get => run_get(cmd, opts),
+        Action::Get => run_get(cmd),
         Action::Read => run_read(cmd),
         Action::Cite => run_cite(cmd),
         other => {
@@ -28,7 +19,11 @@ pub fn run(cmd: &Command, opts: GetOpts) -> i32 {
     }
 }
 
-fn run_get(cmd: &Command, opts: GetOpts) -> i32 {
+fn context_radius(cmd: &Command) -> u32 {
+    cmd.context.unwrap_or(0)
+}
+
+fn run_get(cmd: &Command) -> i32 {
     let Some(line_id) = cmd.q.as_deref() else {
         eprintln!("get requires a line_id");
         return 2;
@@ -41,8 +36,9 @@ fn run_get(cmd: &Command, opts: GetOpts) -> i32 {
         }
     };
 
-    let result = if opts.context > 0 {
-        get_context(&root, line_id, opts.context)
+    let radius = context_radius(cmd);
+    let result = if radius > 0 {
+        get_context(&root, line_id, radius)
     } else {
         get_line(&root, line_id).map(|o| {
             o.map(|hit| GetContext {
@@ -54,12 +50,10 @@ fn run_get(cmd: &Command, opts: GetOpts) -> i32 {
 
     match result {
         Ok(Some(got)) => {
-            if opts.copy {
-                let block = format_copy_block(&got.hit);
-                println!("{block}");
-                try_clipboard(&block);
+            if cmd.copy {
+                println!("{}", format_copy_block(&got.hit));
             } else if cmd.format == Format::Json {
-                print_get_json(&got);
+                print_get_json(&got, radius > 0);
             } else {
                 print_get_tty(&got);
             }
@@ -139,7 +133,11 @@ fn run_cite(cmd: &Command) -> i32 {
     };
     match get_line(&root, line_id) {
         Ok(Some(hit)) => {
-            println!("{}", hit.citation);
+            if cmd.copy {
+                println!("{}", format_copy_block(&hit));
+            } else {
+                println!("{}", hit.citation);
+            }
             0
         }
         Ok(None) => {
@@ -157,13 +155,26 @@ fn run_cite(cmd: &Command) -> i32 {
     }
 }
 
-fn print_get_json(got: &GetContext) {
+fn split_neighbors(got: &GetContext) -> (Vec<&Hit>, Vec<&Hit>) {
+    let center = got.hit.line_id.as_str();
+    got.context
+        .iter()
+        .partition(|h| h.line_id.as_str() < center)
+}
+
+fn print_get_json(got: &GetContext, with_window: bool) {
     #[allow(clippy::expect_used)]
     {
-        let body = serde_json::json!({
-            "hit": got.hit,
-            "context": got.context,
-        });
+        let body = if with_window {
+            let (before, after) = split_neighbors(got);
+            serde_json::json!({
+                "hit": got.hit,
+                "before": before,
+                "after": after,
+            })
+        } else {
+            serde_json::json!({ "hit": got.hit })
+        };
         println!("{}", serde_json::to_string_pretty(&body).expect("get json"));
     }
 }
@@ -180,11 +191,7 @@ fn print_hits_json(hits: &[Hit]) {
 }
 
 fn print_get_tty(got: &GetContext) {
-    let center = &got.hit.line_id;
-    let (before, after): (Vec<&Hit>, Vec<&Hit>) = got
-        .context
-        .iter()
-        .partition(|h| h.line_id.as_str() < center.as_str());
+    let (before, after) = split_neighbors(got);
     for h in before {
         println!("{}  {}", h.line_id, h.text_raw);
     }
@@ -195,20 +202,6 @@ fn print_get_tty(got: &GetContext) {
     println!("{}", got.hit.citation);
     for h in after {
         println!("{}  {}", h.line_id, h.text_raw);
-    }
-}
-
-/// Best-effort clipboard; failure is a stderr warning only.
-fn try_clipboard(text: &str) {
-    match arboard::Clipboard::new() {
-        Ok(mut cb) => {
-            if let Err(e) = cb.set_text(text.to_string()) {
-                eprintln!("clipboard: {e}");
-            }
-        }
-        Err(e) => {
-            eprintln!("clipboard unavailable: {e}");
-        }
     }
 }
 
@@ -235,17 +228,22 @@ mod tests {
         p
     }
 
-    #[test]
-    fn run_requires_line_id() {
-        let cmd = Command {
+    fn cmd_get(q: Option<&str>, format: Format) -> Command {
+        Command {
             action: Action::Get,
-            q: None,
+            q: q.map(str::to_string),
             filters: Filters::default(),
-            format: Format::Json,
+            format,
             explain: false,
             parsed_query: None,
-        };
-        assert_eq!(run(&cmd, GetOpts::default()), 2);
+            context: None,
+            copy: false,
+        }
+    }
+
+    #[test]
+    fn run_requires_line_id() {
+        assert_eq!(run(&cmd_get(None, Format::Json)), 2);
     }
 
     #[test]
@@ -253,15 +251,7 @@ mod tests {
         let _g = env_lock();
         std::env::remove_var("CBETA_INDEX");
         std::env::remove_var("HOME");
-        let cmd = Command {
-            action: Action::Get,
-            q: Some("T30n1578_p0268b21".into()),
-            filters: Filters::default(),
-            format: Format::Json,
-            explain: false,
-            parsed_query: None,
-        };
-        assert_eq!(run(&cmd, GetOpts::default()), 2);
+        assert_eq!(run(&cmd_get(Some("T30n1578_p0268b21"), Format::Json)), 2);
     }
 
     #[test]
@@ -269,15 +259,7 @@ mod tests {
         let _g = env_lock();
         let empty = temp_dir("empty");
         std::env::set_var("CBETA_INDEX", &empty);
-        let cmd = Command {
-            action: Action::Get,
-            q: Some("T30n1578_p0268b21".into()),
-            filters: Filters::default(),
-            format: Format::Json,
-            explain: false,
-            parsed_query: None,
-        };
-        assert_eq!(run(&cmd, GetOpts::default()), 2);
+        assert_eq!(run(&cmd_get(Some("T30n1578_p0268b21"), Format::Json)), 2);
 
         let corpus = mini_corpus();
         let index = temp_dir("idx");
@@ -290,16 +272,20 @@ mod tests {
             format: Format::Plain,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(crate::cmd_build::run(&build), 0);
 
-        let mut get = cmd;
-        get.format = Format::Json;
-        assert_eq!(run(&get, GetOpts::default()), 0);
+        let mut get = cmd_get(Some("T30n1578_p0268b21"), Format::Json);
+        assert_eq!(run(&get), 0);
         get.format = Format::Tty;
-        assert_eq!(run(&get, GetOpts::default()), 0);
+        assert_eq!(run(&get), 0);
+        get.context = Some(4);
+        assert_eq!(run(&get), 0);
         get.q = Some("T30n1578_p0268a12".into());
-        assert_eq!(run(&get, GetOpts::default()), 1);
+        get.context = None;
+        assert_eq!(run(&get), 1);
 
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");

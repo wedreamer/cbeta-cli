@@ -13,9 +13,9 @@ pub enum Action {
     Verify,
     /// Fetch one line by `line_id`.
     Get,
-    /// Open a work/passage (type-only today; not yet in clap).
+    /// List lines of a work (optionally one juan) in `line_id` order.
     Read,
-    /// Format a citation string (type-only today; not yet in clap).
+    /// Print a CBETA citation string for a `line_id`.
     Cite,
     /// Browse catalog metadata.
     Catalog,
@@ -84,6 +84,13 @@ pub struct Command {
     /// Filled when `q` was run through [`crate::parse_query`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parsed_query: Option<crate::ParsedQuery>,
+    /// Neighbor radius for `get -C` / `--context` (None or 0 = no window).
+    /// Search ignores this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<u32>,
+    /// When true, `get`/`cite` print a notes-ready citation block to stdout.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub copy: bool,
 }
 
 /// One search hit (product shape; search engine not wired yet).
@@ -149,6 +156,23 @@ pub struct IndexInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_context_copy_skip_empty() {
+        let bare = Command::default();
+        let v = serde_json::to_value(&bare).unwrap();
+        assert!(v.get("context").is_none());
+        assert!(v.get("copy").is_none());
+
+        let full = Command {
+            context: Some(4),
+            copy: true,
+            ..Command::default()
+        };
+        let v = serde_json::to_value(&full).unwrap();
+        assert_eq!(v["context"], 4);
+        assert_eq!(v["copy"], true);
+    }
 
     #[test]
     fn action_read_cite_serde_roundtrip() {

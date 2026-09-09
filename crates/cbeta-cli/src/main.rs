@@ -14,7 +14,6 @@ use cbeta_core::{parse_query, Action, Command};
 use clap::Parser;
 
 use cli_args::{format_of, resolve, Cli};
-use cmd_get::GetOpts;
 
 fn main() {
     let out = resolve(Cli::parse());
@@ -56,10 +55,11 @@ fn main() {
         format: format_of(out.json, out.plain),
         explain: out.explain,
         parsed_query: parsed,
-    };
-
-    let get_opts = GetOpts {
-        context: out.context,
+        context: if out.context > 0 {
+            Some(out.context)
+        } else {
+            None
+        },
         copy: out.copy,
     };
 
@@ -81,9 +81,7 @@ fn main() {
             }
         }
         Action::Search => std::process::exit(cmd_search::run(&cmd)),
-        Action::Get | Action::Read | Action::Cite => {
-            std::process::exit(cmd_get::run(&cmd, get_opts))
-        }
+        Action::Get | Action::Read | Action::Cite => std::process::exit(cmd_get::run(&cmd)),
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify if out.json => {

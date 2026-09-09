@@ -48,7 +48,7 @@ pub enum Cmds {
         /// Neighbor radius on sorted `line_id` (like `rg -C`).
         #[arg(short = 'C', long = "context", default_value_t = 0)]
         context: u32,
-        /// Print notes-ready citation block; clipboard is best-effort.
+        /// Print notes-ready citation block to stdout (no OS clipboard).
         #[arg(long)]
         copy: bool,
     },

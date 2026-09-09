@@ -250,6 +250,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(crate::cmd_build::run(&cmd), 0);
     }
@@ -267,6 +269,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run_catalog(&cmd), 0);
         cmd.format = Format::Tty;
@@ -325,6 +329,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run_catalog(&cmd), 2);
         assert_eq!(run_info(&cmd), 2);
@@ -345,6 +351,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run_info(&cmd), 0);
 
@@ -392,6 +400,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run_catalog(&cmd), 0);
 
@@ -423,6 +433,8 @@ mod tests {
             format: Format::Json,
             explain: false,
             parsed_query: None,
+            context: None,
+            copy: false,
         };
         assert_eq!(run_catalog(&cmd), 2);
         std::env::remove_var("CBETA_CORPUS");
