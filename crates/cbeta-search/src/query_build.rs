@@ -20,25 +20,69 @@ pub fn build_query(
         .map(|t| normalize_query(t, gaiji))
         .filter(|t| !t.is_empty())
         .collect();
+    let excluded: Vec<String> = parsed
+        .excluded
+        .iter()
+        .map(|t| normalize_query(t, gaiji))
+        .filter(|t| !t.is_empty())
+        .collect();
     if norms.is_empty() {
         let raw = normalize_query(&parsed.raw, gaiji);
         return Ok(term_or_phrase(&raw, fields));
     }
     match parsed.mode.as_str() {
         "keyword" | "wildcard" | "phrase" => {
-            // Contiguous string → phrase of unigrams (positions are char indices).
-            Ok(term_or_phrase(&norms[0], fields))
+            if excluded.is_empty() {
+                Ok(term_or_phrase(&norms[0], fields))
+            } else {
+                Ok(boolean_with_excluded(
+                    norms.iter().map(|t| term_or_phrase(t, fields)).collect(),
+                    Occur::Must,
+                    &excluded,
+                    fields,
+                ))
+            }
         }
         "near" | "before" => {
-            // P0: Boolean AND of each term subquery (no window confirm yet).
-            let mut clauses = Vec::new();
-            for t in &norms {
-                clauses.push((Occur::Must, term_or_phrase(t, fields)));
-            }
-            Ok(Box::new(BooleanQuery::new(clauses)))
+            // P0/P1-dsl: Boolean AND of each term subquery (no window confirm yet).
+            let positives: Vec<Box<dyn Query>> =
+                norms.iter().map(|t| term_or_phrase(t, fields)).collect();
+            Ok(boolean_with_excluded(
+                positives,
+                Occur::Must,
+                &excluded,
+                fields,
+            ))
+        }
+        "boolean" => {
+            let occur = match parsed.bool_op.as_deref() {
+                Some("or") => Occur::Should,
+                _ => Occur::Must,
+            };
+            let positives: Vec<Box<dyn Query>> =
+                norms.iter().map(|t| term_or_phrase(t, fields)).collect();
+            Ok(boolean_with_excluded(positives, occur, &excluded, fields))
         }
         _ => Ok(term_or_phrase(&norms[0], fields)),
     }
+}
+
+fn boolean_with_excluded(
+    positives: Vec<Box<dyn Query>>,
+    positive_occur: Occur,
+    excluded: &[String],
+    fields: &LineSchema,
+) -> Box<dyn Query> {
+    let mut clauses: Vec<(Occur, Box<dyn Query>)> =
+        positives.into_iter().map(|q| (positive_occur, q)).collect();
+    for t in excluded {
+        clauses.push((Occur::MustNot, term_or_phrase(t, fields)));
+    }
+    if clauses.len() == 1 && matches!(clauses[0].0, Occur::Must | Occur::Should) {
+        let (_, q) = clauses.remove(0);
+        return q;
+    }
+    Box::new(BooleanQuery::new(clauses))
 }
 
 fn term_or_phrase(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
@@ -78,44 +122,46 @@ mod tests {
         build_line_schema()
     }
 
+    fn pq(
+        raw: &str,
+        mode: &str,
+        terms: Vec<&str>,
+        within_chars: Option<u32>,
+        wildcard: Option<bool>,
+    ) -> ParsedQuery {
+        ParsedQuery {
+            raw: raw.into(),
+            mode: mode.into(),
+            terms: terms.into_iter().map(str::to_string).collect(),
+            within_chars,
+            wildcard,
+            ordered: None,
+            bool_op: None,
+            excluded: Vec::new(),
+        }
+    }
+
     #[test]
     fn empty_norms_falls_back_to_raw() {
-        let pq = ParsedQuery {
-            raw: "空".into(),
-            mode: "keyword".into(),
-            terms: vec![String::new()],
-            within_chars: None,
-            wildcard: None,
-        };
-        let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
-        let _ = q;
+        let mut q = pq("空", "keyword", vec![""], None, None);
+        q.terms = vec![String::new()];
+        let built = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
+        let _ = built;
     }
 
     #[test]
     fn near_and_before_build_boolean_and() {
         for mode in ["near", "before"] {
-            let pq = ParsedQuery {
-                raw: "a+b".into(),
-                mode: mode.into(),
-                terms: vec!["空".into(), "性".into()],
-                within_chars: Some(30),
-                wildcard: None,
-            };
-            let q = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
-            let _ = q;
+            let q = pq("a+b", mode, vec!["空", "性"], Some(30), None);
+            let built = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
+            let _ = built;
         }
     }
 
     #[test]
     fn unknown_mode_uses_first_term() {
-        let pq = ParsedQuery {
-            raw: "x".into(),
-            mode: "fuzzy".into(),
-            terms: vec!["空性".into()],
-            within_chars: None,
-            wildcard: None,
-        };
-        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+        let q = pq("x", "fuzzy", vec!["空性"], None, None);
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
     }
 
     #[test]
@@ -128,25 +174,27 @@ mod tests {
 
     #[test]
     fn keyword_mode_phrase() {
-        let pq = ParsedQuery {
-            raw: "真性有為空".into(),
-            mode: "keyword".into(),
-            terms: vec!["真性有為空".into()],
-            within_chars: None,
-            wildcard: None,
-        };
-        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+        let q = pq("真性有為空", "keyword", vec!["真性有為空"], None, None);
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
     }
 
     #[test]
     fn phrase_mode_uses_term_or_phrase() {
-        let pq = ParsedQuery {
-            raw: "缘生故如幻".into(),
-            mode: "phrase".into(),
-            terms: vec!["缘生故如幻".into()],
-            within_chars: None,
-            wildcard: None,
-        };
-        let _ = build_query(&pq, &fields(), &GaijiMap::default()).unwrap();
+        let q = pq("缘生故如幻", "phrase", vec!["缘生故如幻"], None, None);
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
+    }
+
+    #[test]
+    fn boolean_or_builds() {
+        let mut q = pq("a,b", "boolean", vec!["空", "性"], None, None);
+        q.bool_op = Some("or".into());
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
+    }
+
+    #[test]
+    fn excluded_terms_build_must_not() {
+        let mut q = pq("空-外", "keyword", vec!["空"], None, None);
+        q.excluded = vec!["外".into()];
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
     }
 }
