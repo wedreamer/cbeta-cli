@@ -3,6 +3,9 @@
 //! Results return as JSON text on the MCP channel. Never write product output
 //! with `println!` — stdout is reserved for JSON-RPC.
 
+use std::sync::Arc;
+
+use cbeta_search::OpenIndex;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo},
@@ -11,18 +14,31 @@ use rmcp::{
 use serde::Deserialize;
 
 use super::handlers;
+use crate::env_paths::index_root;
 
-/// MCP server holding the generated tool router.
+/// MCP server holding the generated tool router and optional shared index.
 #[derive(Debug, Clone)]
 pub struct CbetaMcp {
     tool_router: ToolRouter<Self>,
+    /// Opened once at serve start when available; handlers reuse without Mutex.
+    index: Option<Arc<OpenIndex>>,
 }
 
 impl CbetaMcp {
-    /// Build a server with the five product tools registered.
+    /// Build a server with the five product tools; open index if present.
     pub fn new() -> Self {
+        let index = index_root()
+            .ok()
+            .and_then(|r| OpenIndex::open(&r).ok())
+            .map(Arc::new);
+        Self::with_index(index)
+    }
+
+    /// Build with a pre-opened index (HTTP path shares one `OpenIndex`).
+    pub fn with_index(index: Option<Arc<OpenIndex>>) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            index,
         }
     }
 }
@@ -118,7 +134,8 @@ impl CbetaMcp {
         &self,
         Parameters(args): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = tokio::task::spawn_blocking(move || handlers::run_search(args))
+        let index = self.index.clone();
+        let outcome = tokio::task::spawn_blocking(move || handlers::run_search(args, index))
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(outcome_to_result(outcome))
@@ -133,7 +150,8 @@ impl CbetaMcp {
         &self,
         Parameters(args): Parameters<VerifyArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = tokio::task::spawn_blocking(move || handlers::run_verify(args.q))
+        let index = self.index.clone();
+        let outcome = tokio::task::spawn_blocking(move || handlers::run_verify(args.q, index))
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(outcome_to_result(outcome))
@@ -148,7 +166,8 @@ impl CbetaMcp {
         &self,
         Parameters(args): Parameters<GetPassageArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let outcome = tokio::task::spawn_blocking(move || handlers::run_get_passage(args))
+        let index = self.index.clone();
+        let outcome = tokio::task::spawn_blocking(move || handlers::run_get_passage(args, index))
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(outcome_to_result(outcome))

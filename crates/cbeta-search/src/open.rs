@@ -51,6 +51,46 @@ pub fn open_search_index(root: &Path) -> Result<(Index, LineSchema, PathBuf)> {
     Ok((index, fields, art))
 }
 
+/// Shared open index + reloading reader for multi-request serve / MCP paths.
+///
+/// WHY: opening mmap once avoids per-request open cost and lets concurrent
+/// searches share one reader without a Mutex.
+pub struct OpenIndex {
+    _index: Index,
+    /// Reloading reader (clone is cheap; concurrent searchers are safe).
+    pub reader: tantivy::IndexReader,
+    /// Field handles for the open schema.
+    pub fields: LineSchema,
+    /// Index root that was opened (`CBETA_INDEX`).
+    pub root: PathBuf,
+    /// Active artifact directory under `root`.
+    pub artifact: PathBuf,
+}
+
+impl std::fmt::Debug for OpenIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenIndex")
+            .field("root", &self.root)
+            .field("artifact", &self.artifact)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OpenIndex {
+    /// Open the active artifact under `root` once.
+    pub fn open(root: &Path) -> Result<Self> {
+        let (index, fields, artifact) = open_search_index(root)?;
+        let reader = index.reader()?;
+        Ok(Self {
+            _index: index,
+            reader,
+            fields,
+            root: root.to_path_buf(),
+            artifact,
+        })
+    }
+}
+
 fn fields_from_index(index: &Index) -> Result<LineSchema> {
     let schema = index.schema();
     let get = |name: &str| {
@@ -146,6 +186,18 @@ mod tests {
         assert!(art.ends_with("2026R2-hx"));
         let _ = idx;
         let _ = fields;
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_index_debug_shows_paths() {
+        let root = temp_root();
+        let _ = write_artifact(&root, "2026R2", "dbg", &sample(), &GaijiMap::default()).unwrap();
+        fs::write(root.join("CURRENT"), "2026R2-dbg\n").unwrap();
+        let open = OpenIndex::open(&root).unwrap();
+        let s = format!("{open:?}");
+        assert!(s.contains("OpenIndex"));
+        assert!(s.contains("root") || s.contains("artifact"));
         let _ = fs::remove_dir_all(&root);
     }
 }

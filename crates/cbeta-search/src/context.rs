@@ -9,7 +9,7 @@ use tantivy::{Searcher, TantivyDocument};
 
 use crate::error::Result;
 use crate::hitmap::doc_to_hit;
-use crate::open::open_search_index;
+use crate::open::{open_search_index, OpenIndex};
 
 /// Center line plus neighbors within `radius` on the sorted `line_id` axis.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,9 +34,27 @@ pub fn get_context(
 ) -> Result<Option<GetContext>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    get_context_on(&reader, &fields, line_id, radius)
+}
+
+/// Context using an already-open [`OpenIndex`].
+pub fn get_context_open(
+    index: &OpenIndex,
+    line_id: &str,
+    radius: u32,
+) -> Result<Option<GetContext>> {
+    get_context_on(&index.reader, &index.fields, line_id, radius)
+}
+
+fn get_context_on(
+    reader: &tantivy::IndexReader,
+    fields: &LineSchema,
+    line_id: &str,
+    radius: u32,
+) -> Result<Option<GetContext>> {
     let searcher = reader.searcher();
 
-    let Some(hit) = fetch_line(&searcher, &fields, line_id)? else {
+    let Some(hit) = fetch_line(&searcher, fields, line_id)? else {
         return Ok(None);
     };
 
@@ -47,7 +65,7 @@ pub fn get_context(
         }));
     }
 
-    let mut lines = collect_work_lines(&searcher, &fields, &hit.work_id, Some(hit.juan))?;
+    let mut lines = collect_work_lines(&searcher, fields, &hit.work_id, Some(hit.juan))?;
     lines.sort_by(|a, b| a.line_id.cmp(&b.line_id));
 
     let Some(pos) = lines.iter().position(|h| h.line_id == hit.line_id) else {
@@ -74,8 +92,22 @@ pub fn get_context(
 pub fn list_work_juan(index_root: &std::path::Path, work_id: &str, juan: u32) -> Result<Vec<Hit>> {
     let (index, fields, _art) = open_search_index(index_root)?;
     let reader = index.reader()?;
+    list_work_juan_on(&reader, &fields, work_id, juan)
+}
+
+/// Juan listing using an already-open [`OpenIndex`].
+pub fn list_work_juan_open(index: &OpenIndex, work_id: &str, juan: u32) -> Result<Vec<Hit>> {
+    list_work_juan_on(&index.reader, &index.fields, work_id, juan)
+}
+
+fn list_work_juan_on(
+    reader: &tantivy::IndexReader,
+    fields: &LineSchema,
+    work_id: &str,
+    juan: u32,
+) -> Result<Vec<Hit>> {
     let searcher = reader.searcher();
-    let mut lines = collect_work_lines(&searcher, &fields, work_id, Some(u64::from(juan)))?;
+    let mut lines = collect_work_lines(&searcher, fields, work_id, Some(u64::from(juan)))?;
     lines.sort_by(|a, b| a.line_id.cmp(&b.line_id));
     Ok(lines)
 }
@@ -125,4 +157,82 @@ fn collect_work_lines(
         hits.push(doc_to_hit(&doc, fields, score));
     }
     Ok(hits)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use cbeta_index::{write_artifact, IndexableLine};
+    use cbeta_parse::{GaijiMap, ParsedLine};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn sample_lines() -> Vec<IndexableLine> {
+        let mk = |id: &str, juan: u64, raw: &str| IndexableLine {
+            line: ParsedLine {
+                line_id: id.into(),
+                work_id: "T1578".into(),
+                juan,
+                text_raw: raw.into(),
+                lb_n: id.rsplit('_').next().unwrap_or("").into(),
+            },
+            title: "t".into(),
+            author: "a".into(),
+            citation: "c".into(),
+            cbeta_tag: "2026R2".into(),
+        };
+        vec![
+            mk("T30n1578_p0268b20", 1, "前"),
+            mk("T30n1578_p0268b21", 1, "真性有為空"),
+            mk("T30n1578_p0268b22", 1, "後"),
+        ]
+    }
+
+    fn temp_root() -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-ctx-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn get_context_radius_zero_and_neighbors() {
+        let root = temp_root();
+        let _ =
+            write_artifact(&root, "2026R2", "c1", &sample_lines(), &GaijiMap::default()).unwrap();
+        fs::write(root.join("CURRENT"), "2026R2-c1\n").unwrap();
+
+        let z = get_context(&root, "T30n1578_p0268b21", 0)
+            .unwrap()
+            .expect("hit");
+        assert!(z.context.is_empty());
+
+        let w = get_context(&root, "T30n1578_p0268b21", 1)
+            .unwrap()
+            .expect("hit");
+        assert_eq!(w.context.len(), 2);
+
+        let open = OpenIndex::open(&root).unwrap();
+        let o = get_context_open(&open, "T30n1578_p0268b21", 1)
+            .unwrap()
+            .expect("hit");
+        assert_eq!(o.context.len(), 2);
+
+        let listed = list_work_juan(&root, "T1578", 1).unwrap();
+        assert_eq!(listed.len(), 3);
+        let listed2 = list_work_juan_open(&open, "T1578", 1).unwrap();
+        assert_eq!(listed2.len(), 3);
+
+        assert!(get_context(&root, "ghost-line", 1).unwrap().is_none());
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

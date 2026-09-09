@@ -105,4 +105,40 @@ mod tests {
         assert!(artifact_dir_name("2026R2", "../etc").is_err());
         assert_eq!(artifact_dir_name("2026R2", "abc").unwrap(), "2026R2-abc");
     }
+
+    /// #37 RED: missing `write_current_pointer` (tempfile+rename CURRENT, not in-place write).
+    #[test]
+    fn write_current_pointer_api_publishes_via_rename() {
+        use std::fs;
+
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "cbeta-index-current-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&root).expect("tmpdir");
+
+        crate::write_current_pointer(&root, "2026R2-c1f1x7a0")
+            .expect("write_current_pointer should publish CURRENT atomically");
+
+        let body = fs::read_to_string(root.join("CURRENT")).expect("CURRENT");
+        assert_eq!(body.trim(), "2026R2-c1f1x7a0");
+
+        let leftovers: Vec<_> = fs::read_dir(&root)
+            .expect("read root")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "CURRENT" && n.starts_with("CURRENT"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp CURRENT* leftovers after rename: {leftovers:?}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

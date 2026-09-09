@@ -1,22 +1,31 @@
-//! `cbeta serve`: stdio MCP server (five tools; no HTTP).
+//! `cbeta serve`: stdio MCP, or HTTP when `--http ADDR` is set.
+
+mod bind;
+mod http;
+mod rest;
 
 use rmcp::{transport::stdio, ServiceExt};
 use tracing_subscriber::EnvFilter;
 
 use crate::mcp::CbetaMcp;
 
-/// Run the MCP server on stdin/stdout until the client disconnects.
-///
-/// Logs go to stderr only — stdout is the JSON-RPC channel.
-pub fn run() -> i32 {
+/// Run serve. `http` is `Some(addr)` for HTTP mode; `None` is stdio MCP.
+pub fn run(http: Option<&str>) -> i32 {
+    if let Some(addr) = http {
+        return http::run_http(addr);
+    }
+    run_stdio()
+}
+
+fn run_stdio() -> i32 {
     // WHY: product output must never touch stdout; agents parse NDJSON there.
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_target(false)
-        .init();
+        .try_init();
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -49,4 +58,14 @@ async fn serve_stdio() -> Result<(), String> {
         .await
         .map_err(|e| format!("serve wait: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_http_branch_rejects_bare_port() {
+        assert_eq!(run(Some("1873")), 2);
+    }
 }

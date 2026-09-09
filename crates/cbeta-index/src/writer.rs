@@ -1,4 +1,4 @@
-//! Index writers: RAM (tests) and atomic on-disk artifact dirs.
+//! Index writers: RAM (tests) and on-disk Tantivy trees (staged by [`crate::publish`]).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,8 +9,8 @@ use tantivy::directory::MmapDirectory;
 use tantivy::schema::TantivyDocument;
 use tantivy::{Index, IndexWriter};
 
-use crate::error::{Error, Result};
-use crate::paths::tmp_dir_for;
+use crate::error::Result;
+use crate::publish::{publish_dir, resolve_publish_dest, stage_tmp_dir};
 use crate::schema::{build_line_schema, LineSchema};
 use crate::tokenizer::{CjkNgramTokenizer, CJK_TOKENIZER_NAME};
 
@@ -81,49 +81,48 @@ pub fn add_lines(
     Ok(())
 }
 
-/// Build an artifact under `{final_dir}.tmp` then atomically rename to `final_dir`.
-///
-/// Never mutates an existing hash dir in place. If `final_dir` already exists,
-/// it is left untouched and this returns [`Error::Path`].
-pub fn write_atomic_dir(final_dir: &Path, lines: &[IndexableLine], gaiji: &GaijiMap) -> Result<()> {
-    if final_dir.exists() {
-        return Err(Error::Path(format!(
-            "index artifact already exists: {}",
-            final_dir.display()
-        )));
-    }
-    let tmp = tmp_dir_for(final_dir);
-    if tmp.exists() {
-        fs::remove_dir_all(&tmp)?;
-    }
-    fs::create_dir_all(&tmp)?;
-
-    let result = (|| -> Result<()> {
-        let line_schema = build_line_schema();
-        let dir = MmapDirectory::open(&tmp)?;
-        let index = Index::create(dir, line_schema.schema.clone(), Default::default())?;
-        register_tokenizers(&index);
-        let mut writer = index.writer(15_000_000)?;
-        add_lines(&mut writer, &line_schema, lines, gaiji)?;
-        writer.commit()?;
-        // drop writer before rename
-        drop(writer);
-        Ok(())
-    })();
-
-    if let Err(e) = result {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(e);
-    }
-
-    if let Some(parent) = final_dir.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::rename(&tmp, final_dir)?;
+/// Write Tantivy segment files into an existing directory (no rename; caller publishes).
+pub fn write_tantivy_dir(dir: &Path, lines: &[IndexableLine], gaiji: &GaijiMap) -> Result<()> {
+    let line_schema = build_line_schema();
+    let mmap = MmapDirectory::open(dir)?;
+    let index = Index::create(mmap, line_schema.schema.clone(), Default::default())?;
+    register_tokenizers(&index);
+    let mut writer = index.writer(15_000_000)?;
+    add_lines(&mut writer, &line_schema, lines, gaiji)?;
+    writer.commit()?;
+    drop(writer);
     Ok(())
 }
 
-/// Convenience: write under `root/{tag}-{scope_hash}/` atomically.
+/// Stage under `{final_dir}.tmp`, write Tantivy, rename to free dest (never deletes live).
+///
+/// If `final_dir` already exists, publishes to a unique sibling `{name}.{unix_nanos}` and
+/// returns that path. Previous artifact directories are left untouched.
+pub fn write_atomic_dir(
+    final_dir: &Path,
+    lines: &[IndexableLine],
+    gaiji: &GaijiMap,
+) -> Result<PathBuf> {
+    let tmp = stage_tmp_dir(final_dir)?;
+    if let Err(e) = write_tantivy_dir(&tmp, lines, gaiji) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+    let dest = match resolve_publish_dest(final_dir) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    };
+    if let Err(e) = publish_dir(&tmp, &dest) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+    Ok(dest)
+}
+
+/// Convenience: write under `root/{tag}-{scope_hash}/` (or unique sibling) atomically.
 pub fn write_artifact(
     root: &Path,
     tag: &str,
@@ -132,13 +131,13 @@ pub fn write_artifact(
     gaiji: &GaijiMap,
 ) -> Result<PathBuf> {
     let final_dir = root.join(crate::paths::artifact_dir_name(tag, scope_hash)?);
-    write_atomic_dir(&final_dir, lines, gaiji)?;
-    Ok(final_dir)
+    write_atomic_dir(&final_dir, lines, gaiji)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::tmp_dir_for;
     use crate::tokenizer::tokenize_all;
     use cbeta_parse::ParsedLine;
     use tantivy::collector::TopDocs;
@@ -255,9 +254,14 @@ mod tests {
 
         assert!(final_path.is_dir());
         assert!(!tmp_dir_for(&final_path).exists());
-        // second write must refuse in-place mutate
-        let err = write_artifact(&root, "2026R2", "deadbeef", &sample_lines(), &gaiji);
-        assert!(err.is_err());
+        // second write must keep the first dir and publish a unique sibling
+        let second =
+            write_artifact(&root, "2026R2", "deadbeef", &sample_lines(), &gaiji).expect("rewrite");
+        assert!(final_path.is_dir(), "previous artifact must remain");
+        assert_ne!(second, final_path);
+        assert!(second.is_dir());
+        assert!(!tmp_dir_for(&root.join("2026R2-deadbeef")).exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn tempfile_dir() -> PathBuf {
@@ -282,7 +286,8 @@ mod tests {
         let tmp = tmp_dir_for(&final_dir);
         fs::create_dir_all(&tmp).unwrap();
         fs::write(tmp.join("stale"), "x").unwrap();
-        write_atomic_dir(&final_dir, &sample_lines(), &GaijiMap::default()).unwrap();
+        let dest = write_atomic_dir(&final_dir, &sample_lines(), &GaijiMap::default()).unwrap();
+        assert_eq!(dest, final_dir);
         assert!(final_dir.is_dir());
         assert!(!tmp.exists());
         let _ = fs::remove_dir_all(&dir);
