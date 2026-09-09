@@ -1,0 +1,224 @@
+//! Scholar-shaped CLI usability: real `cbeta` binary against the mini fixture.
+//!
+//! These tests lock the recipes in AGENTS.md TESTS. They do **not** replace a
+//! local transcript of the same commands run by hand (or as a human would).
+
+mod common;
+
+use common::{cbeta_env, mini_corpus, temp_dir};
+use std::path::{Path, PathBuf};
+use std::process::Output;
+
+fn built() -> (PathBuf, PathBuf) {
+    let corpus = mini_corpus();
+    let index = temp_dir("use");
+    let build = cbeta_env(&corpus, &index)
+        .args(["build", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("build: {e}"));
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    (corpus, index)
+}
+
+fn run(corpus: &Path, index: &Path, args: &[&str]) -> Output {
+    cbeta_env(corpus, index)
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn cbeta {args:?}: {e}"))
+}
+
+fn stdout_utf8(out: &Output) -> String {
+    String::from_utf8(out.stdout.clone()).unwrap_or_else(|e| panic!("stdout utf-8: {e}"))
+}
+
+#[test]
+fn tty_keyword_search_shows_rank_line_id_title() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: scholar types a simplified keyword (bare search, TTY)
+    let out = run(&corpus, &index, &["真性有为空"]);
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: rank + real line_id + 掌珍 title (not ghost a12)
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "TTY search exit 0; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("T30n1578_p0268b21"),
+        "expected line_id; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("大乘掌珍論"),
+        "expected title; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("  1  ") || stdout.contains("1  T30n1578"),
+        "expected rank column; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn json_search_hit_has_product_fields() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: same recipe with --json
+    let out = run(&corpus, &index, &["search", "--json", "真性有为空"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "json search; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; stdout={stdout}"));
+    let Some(hits) = v["hits"].as_array() else {
+        panic!("hits array; got {stdout}");
+    };
+    assert!(!hits.is_empty(), "expected a hit; got {stdout}");
+    let h = &hits[0];
+    for key in [
+        "line_id",
+        "work_id",
+        "title",
+        "text_raw",
+        "citation",
+        "score",
+        "cbeta_tag",
+    ] {
+        assert!(h.get(key).is_some(), "missing {key} in {h}");
+    }
+    assert_eq!(h["line_id"], "T30n1578_p0268b21");
+}
+
+#[test]
+fn no_hit_exits_1() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: a string that cannot occur in the fixture
+    let out = run(&corpus, &index, &["search", "xyzzy-not-in-corpus"]);
+    // Then: rg-style no-hit
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "no-hit exit 1; stdout={} stderr={}",
+        stdout_utf8(&out),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn catalog_author_xuanzang_lists_t1578() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: scholar filters catalog by 作译者
+    let out = run(&corpus, &index, &["catalog", "--author", "玄奘"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "catalog --author; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("T1578"), "expected T1578; got:\n{stdout}");
+}
+
+#[test]
+fn catalog_type_lun_canon_t() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: lun + Taisho
+    let out = run(
+        &corpus,
+        &index,
+        &["catalog", "--type", "lun", "--canon", "T"],
+    );
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "catalog --type/--canon; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("T1578"),
+        "expected lun T1578; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("T0235"),
+        "jing T0235 must be filtered out; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn info_prints_artifact() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: cbeta info
+    let out = run(&corpus, &index, &["info"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "info; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("2026R2") && stdout.contains("ci-minimal"),
+        "expected tag+scope; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn get_known_line_id_and_ghost() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When/Then: real lb vs docs-ghost a12
+    let hit = run(&corpus, &index, &["get", "T30n1578_p0268b21"]);
+    assert_eq!(
+        hit.status.code(),
+        Some(0),
+        "get known; stderr={}",
+        String::from_utf8_lossy(&hit.stderr)
+    );
+    assert!(
+        stdout_utf8(&hit).contains("T30n1578_p0268b21"),
+        "get stdout: {}",
+        stdout_utf8(&hit)
+    );
+    let ghost = run(&corpus, &index, &["get", "T30n1578_p0268a12"]);
+    assert_eq!(ghost.status.code(), Some(1), "ghost line_id must exit 1");
+}
+
+#[test]
+fn search_mode_phrase_hits_yuan_sheng() {
+    // Given: mini index (T1578 has 緣生故如幻 at 0268b22)
+    let (corpus, index) = built();
+    // When: issue #7 acceptance — CLI --mode phrase
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--mode", "phrase", "缘生故如幻"],
+    );
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: hit, not clap usage error
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "--mode phrase should search; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("T30n1578")
+            || stdout.contains("緣生故如幻")
+            || stdout.contains("缘生故如幻"),
+        "expected T1578 phrase hit; got:\n{stdout}"
+    );
+}
