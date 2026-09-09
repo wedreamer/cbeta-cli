@@ -207,3 +207,100 @@ fn percentile_ms(sorted: &[Duration], pct: usize) -> f64 {
     let idx = (n - 1).saturating_mul(pct) / 100;
     sorted[idx.min(n - 1)].as_secs_f64() * 1000.0
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+    use crate::env_paths::env_lock;
+    use cbeta_core::{Action, Filters, Format};
+
+    fn temp_dir(prefix: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-bench-ut-{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn mini_corpus() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini")
+    }
+
+    fn bench_cmd(format: Format) -> Command {
+        Command {
+            action: Action::Bench,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        }
+    }
+
+    #[test]
+    fn percentile_empty_is_zero() {
+        assert_eq!(percentile_ms(&[], 50), 0.0);
+        assert_eq!(percentile_ms(&[], 99), 0.0);
+    }
+
+    #[test]
+    fn percentile_single_sample() {
+        let s = [Duration::from_millis(10)];
+        assert!((percentile_ms(&s, 50) - 10.0).abs() < 0.01);
+        assert!((percentile_ms(&s, 99) - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn run_missing_index_exits_2() {
+        let _g = env_lock();
+        let empty = temp_dir("empty");
+        std::env::set_var("CBETA_INDEX", &empty);
+        std::env::set_var("CBETA_CORPUS", mini_corpus());
+        assert_eq!(run(&bench_cmd(Format::Json)), 2);
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("CBETA_CORPUS");
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn run_index_root_error_exits_2() {
+        let _g = env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        assert_eq!(run(&bench_cmd(Format::Tty)), 2);
+    }
+
+    #[test]
+    fn run_with_mini_index_tty_and_json() {
+        let _g = env_lock();
+        let corpus = mini_corpus();
+        let index = temp_dir("idx");
+        std::env::set_var("CBETA_CORPUS", &corpus);
+        std::env::set_var("CBETA_INDEX", &index);
+        let build = Command {
+            action: Action::Build,
+            q: Some("ci-minimal".into()),
+            filters: Filters::default(),
+            format: Format::Plain,
+            explain: false,
+            parsed_query: None,
+            context: None,
+            copy: false,
+        };
+        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(run(&bench_cmd(Format::Tty)), 0);
+        assert_eq!(run(&bench_cmd(Format::Json)), 0);
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = std::fs::remove_dir_all(&index);
+    }
+}
