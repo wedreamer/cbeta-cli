@@ -1,6 +1,6 @@
 //! Characterization tests for today's cbeta CLI scaffold contract.
 //! Pins exit codes and `--json` Command dump (not Hits). Do not "upgrade" these.
-//! Build/search/get/catalog/info/verify are product-wired; serve stays scaffold.
+//! Build/search/get/catalog/info/verify/serve are product-wired; MCP covered in cli_mcp.
 
 mod common;
 
@@ -198,10 +198,34 @@ fn info_json_dumps_command() {
 }
 
 #[test]
-fn serve_exits_2() {
-    // No --json: scaffold reports missing index and exits 2.
-    let out = cbeta().arg("serve").output().expect("spawn serve");
-    assert_eq!(out.status.code(), Some(2));
+fn serve_is_mcp_not_scaffold_exit_2() {
+    // Product: `cbeta serve` is stdio MCP (does not exit 2 immediately).
+    // Full handshake lives in cli_mcp; here only assert it stays alive briefly.
+    use std::time::Duration;
+
+    let mut child = cbeta()
+        .arg("serve")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn serve");
+    std::thread::sleep(Duration::from_millis(200));
+    match child.try_wait() {
+        Ok(None) => {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        Ok(Some(status)) => {
+            let mut err = String::new();
+            if let Some(mut e) = child.stderr.take() {
+                use std::io::Read;
+                let _ = e.read_to_string(&mut err);
+            }
+            panic!("serve exited early {status}; stderr={err}");
+        }
+        Err(e) => panic!("try_wait: {e}"),
+    }
 }
 
 #[test]
