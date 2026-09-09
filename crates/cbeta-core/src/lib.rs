@@ -8,6 +8,8 @@
 
 mod query;
 mod types;
+mod verify;
 
 pub use query::{parse_query, ParseError, ParsedQuery};
 pub use types::{Action, CatalogEntry, Command, Filters, Format, Hit, IndexInfo};
+pub use verify::VerifyReport;

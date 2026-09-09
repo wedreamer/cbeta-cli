@@ -28,6 +28,8 @@ tantivy = "0.22"
 quick-xml = "0.37"
 unicode-normalization = "0.1"
 ferrous-opencc = { version = "0.4", default-features = false, features = ["s2t-conversion"] }
+sha2 = "0.10"
+strsim = "0.11"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

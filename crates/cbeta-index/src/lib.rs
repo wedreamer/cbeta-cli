@@ -18,6 +18,6 @@ pub use paths::{
 pub use schema::{build_line_schema, LineSchema};
 pub use tokenizer::{tokenize_all, CjkNgramTokenizer, CJK_TOKENIZER_NAME};
 pub use writer::{
-    add_lines, create_ram_index, register_tokenizers, write_artifact, write_atomic_dir,
-    IndexableLine,
+    add_lines, create_ram_index, hash_text_norm, register_tokenizers, write_artifact,
+    write_atomic_dir, IndexableLine,
 };

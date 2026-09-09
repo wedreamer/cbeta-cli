@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cbeta_parse::{normalize_index, GaijiMap, ParsedLine};
+use sha2::{Digest, Sha256};
 use tantivy::directory::MmapDirectory;
 use tantivy::schema::TantivyDocument;
 use tantivy::{Index, IndexWriter};
@@ -12,6 +13,17 @@ use crate::error::{Error, Result};
 use crate::paths::tmp_dir_for;
 use crate::schema::{build_line_schema, LineSchema};
 use crate::tokenizer::{CjkNgramTokenizer, CJK_TOKENIZER_NAME};
+
+/// Stable SHA-256 hex of normalized text (not `DefaultHasher`).
+pub fn hash_text_norm(text_norm: &str) -> String {
+    let digest = Sha256::digest(text_norm.as_bytes());
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        use std::fmt::Write;
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
 
 /// One line plus display/meta fields needed for later get/search hits.
 #[derive(Debug, Clone)]
@@ -52,6 +64,7 @@ pub fn add_lines(
 ) -> Result<()> {
     for item in lines {
         let text_norm = normalize_index(&item.line.text_raw, gaiji);
+        let norm_hash = hash_text_norm(&text_norm);
         let mut doc = TantivyDocument::default();
         doc.add_text(fields.line_id, &item.line.line_id);
         doc.add_text(fields.work_id, &item.line.work_id);
@@ -61,6 +74,7 @@ pub fn add_lines(
         doc.add_u64(fields.juan, item.line.juan);
         doc.add_text(fields.text_raw, &item.line.text_raw);
         doc.add_text(fields.text_norm, &text_norm);
+        doc.add_text(fields.norm_hash, &norm_hash);
         doc.add_text(fields.citation, &item.citation);
         writer.add_document(doc)?;
     }

@@ -1,6 +1,6 @@
 //! Characterization tests for today's cbeta CLI scaffold contract.
 //! Pins exit codes and `--json` Command dump (not Hits). Do not "upgrade" these.
-//! Build is product-wired (IndexInfo); search/get/catalog/info/verify stay scaffold until later slices.
+//! Build/search/get/catalog/info/verify are product-wired; serve stays scaffold.
 
 mod common;
 
@@ -241,16 +241,43 @@ fn build_json_dumps_command() {
 
 #[test]
 fn verify_json_dumps_command() {
-    // Scaffold dump only: parent --json precedes verify.
-    let out = cbeta()
-        .args(["--json", "verify", "色即是空"])
+    // Product: verify --json emits VerifyReport, never Command.
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("verify-json");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
+        .args(["--json", "verify", "真性有為空，如幻緣生故"])
         .output()
         .expect("spawn --json verify");
-    assert_eq!(out.status.code(), Some(0));
-
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Verify);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: cbeta_core::VerifyReport =
+        serde_json::from_slice(&out.stdout).expect("VerifyReport");
+    assert!(report.is_original);
+    assert_eq!(
+        report.exact_hit.as_ref().map(|h| h.line_id.as_str()),
+        Some("T30n1578_p0268b21")
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let obj = value.as_object().expect("object");
+    assert!(
+        !obj.contains_key("action"),
+        "must not dump Command; keys={:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -333,23 +360,40 @@ fn get_json_has_no_parsed_query() {
 
 #[test]
 fn verify_json_has_no_parsed_query() {
-    // Given: verify pasted text with --json
-    // When: CLI dumps Command
-    // Then: action=Verify and parsed_query is absent
-    let out = cbeta()
+    // Given: verify pasted text with --json against mini index
+    // When: product VerifyReport is emitted
+    // Then: no action / parsed_query keys (raw q, never parse_query)
+    use common::{cbeta_env, mini_corpus, temp_dir};
+    let corpus = mini_corpus();
+    let index = temp_dir("verify-noparse");
+    assert_eq!(
+        cbeta_env(&corpus, &index)
+            .args(["build", "--scope", "ci-minimal"])
+            .output()
+            .expect("build")
+            .status
+            .code(),
+        Some(0)
+    );
+    let out = cbeta_env(&corpus, &index)
         .args(["--json", "verify", "色即是空"])
         .output()
         .expect("spawn --json verify");
-    assert_eq!(out.status.code(), Some(0));
-
-    let cmd: cbeta_core::Command =
-        serde_json::from_slice(&out.stdout).expect("stdout deserializes as Command");
-    assert_eq!(cmd.action, cbeta_core::Action::Verify);
-    assert!(
-        cmd.parsed_query.is_none(),
-        "verify must not run parse_query; got {:?}",
-        cmd.parsed_query
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
     );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let obj = value.as_object().expect("object");
+    assert!(
+        !obj.contains_key("parsed_query") && !obj.contains_key("action"),
+        "verify product JSON must not be Command; keys={:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
+    assert!(obj.contains_key("is_original"));
+    assert!(obj.contains_key("similar"));
 }
 
 #[test]
