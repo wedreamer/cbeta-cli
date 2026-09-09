@@ -6,6 +6,13 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+fn empty_if_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|v| v.unwrap_or_default())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ScopeManifest {
     pub cbeta_tag: String,
@@ -22,13 +29,15 @@ pub struct CatalogRow {
     pub work_id: String,
     pub canon: String,
     pub path: String,
+    #[serde(default, deserialize_with = "empty_if_null")]
     pub title: String,
+    #[serde(default, deserialize_with = "empty_if_null")]
     pub author: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_if_null")]
     pub dynasty: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_if_null")]
     pub category: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_if_null")]
     pub work_type: String,
 }
 
@@ -120,6 +129,25 @@ mod tests {
         let p = tmp_file("cat-bad", "not-json-line\n");
         let err = read_catalog(&p).unwrap_err();
         assert!(err.contains("line 1"));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn read_catalog_accepts_null_title_author() {
+        let body = concat!(
+            r#"{"work_id":"T1578","canon":"T","path":"T/T30/T30n1578.xml","#,
+            r#""title":null,"author":null,"dynasty":null,"category":null,"work_type":null}"#,
+            "\n",
+        );
+        let p = tmp_file("cat-null", body);
+        let rows = read_catalog(&p).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].work_id, "T1578");
+        assert_eq!(rows[0].title, "");
+        assert_eq!(rows[0].author, "");
+        assert_eq!(rows[0].dynasty, "");
+        assert_eq!(rows[0].category, "");
+        assert_eq!(rows[0].work_type, "");
         let _ = fs::remove_file(&p);
     }
 
