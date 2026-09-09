@@ -8,7 +8,9 @@ use cbeta_search::{search, Error as SearchError, DEFAULT_LIMIT};
 use crate::env_paths::index_root;
 
 /// Run search; exit 0 hits / 1 no-hit / 2 no-index or usage.
-pub fn run(cmd: &Command) -> i32 {
+///
+/// `script`: `Some("s")` converts title/author/text for display only; never mutates `line_id`.
+pub fn run(cmd: &Command, script: Option<&str>) -> i32 {
     let Some(parsed) = cmd.parsed_query.as_ref() else {
         eprintln!("search requires a query");
         return 2;
@@ -34,11 +36,13 @@ pub fn run(cmd: &Command) -> i32 {
         }
     };
 
+    let display: Vec<Hit> = hits.iter().map(|h| display_hit(h, script)).collect();
+
     match cmd.format {
         Format::Json => {
             #[allow(clippy::expect_used)]
             {
-                let body = serde_json::json!({ "hits": hits });
+                let body = serde_json::json!({ "hits": display });
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&body).expect("hits json")
@@ -47,7 +51,7 @@ pub fn run(cmd: &Command) -> i32 {
         }
         Format::Tty | Format::Plain | Format::Jsonl => {
             let color = want_color(cmd.format == Format::Plain);
-            print_human(&hits, &parsed.terms, color);
+            print_human(&display, &parsed.terms, color, script);
         }
     }
 
@@ -55,6 +59,24 @@ pub fn run(cmd: &Command) -> i32 {
         1
     } else {
         0
+    }
+}
+
+/// Clone a hit for display; t2s title/author/text when `--script s`. `line_id` untouched.
+fn display_hit(hit: &Hit, script: Option<&str>) -> Hit {
+    if script != Some("s") {
+        return hit.clone();
+    }
+    Hit {
+        line_id: hit.line_id.clone(),
+        work_id: hit.work_id.clone(),
+        title: cbeta_parse::t2s(&hit.title),
+        author: cbeta_parse::t2s(&hit.author),
+        juan: hit.juan,
+        text_raw: cbeta_parse::t2s(&hit.text_raw),
+        citation: hit.citation.clone(),
+        score: hit.score,
+        cbeta_tag: hit.cbeta_tag.clone(),
     }
 }
 
@@ -68,9 +90,9 @@ fn want_color(plain: bool) -> bool {
     stdout().is_terminal()
 }
 
-fn print_human(hits: &[Hit], terms: &[String], color: bool) {
+fn print_human(hits: &[Hit], terms: &[String], color: bool, script: Option<&str>) {
     for (i, h) in hits.iter().enumerate() {
-        let snip = highlight(&h.text_raw, terms, color);
+        let snip = highlight(&h.text_raw, terms, color, script);
         println!(
             "{:>3}  {}  {}  {}  j{}  {}",
             i + 1,
@@ -83,17 +105,22 @@ fn print_human(hits: &[Hit], terms: &[String], color: bool) {
     }
 }
 
-fn highlight(text: &str, terms: &[String], color: bool) -> String {
+fn highlight(text: &str, terms: &[String], color: bool, script: Option<&str>) -> String {
     if !color || terms.is_empty() {
         return text.to_string();
     }
-    // Display is 繁體; user terms may be 简体 — try s2t so the snippet actually lights up.
+    // Display may be 简体; user terms may be either — try both scripts so highlight still hits.
     for t in terms {
         if t.is_empty() {
             continue;
         }
         let trad = cbeta_parse::s2t(t);
-        for needle in [t.as_str(), trad.as_str()] {
+        let simp = if script == Some("s") {
+            cbeta_parse::t2s(t)
+        } else {
+            t.clone()
+        };
+        for needle in [t.as_str(), trad.as_str(), simp.as_str()] {
             if let Some(pos) = text.find(needle) {
                 let end = pos + needle.len();
                 return format!(
@@ -183,7 +210,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 2);
+        assert_eq!(run(&cmd, None), 2);
     }
 
     #[test]
@@ -202,7 +229,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 2);
+        assert_eq!(run(&cmd, None), 2);
     }
 
     #[test]
@@ -221,7 +248,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 2);
+        assert_eq!(run(&cmd, None), 2);
         std::env::remove_var("CBETA_INDEX");
         let _ = std::fs::remove_dir_all(&index);
     }
@@ -240,17 +267,18 @@ mod tests {
                 context: None,
                 copy: false,
             };
-            assert_eq!(run(&cmd), 0);
+            assert_eq!(run(&cmd, None), 0);
             cmd.format = Format::Plain;
-            assert_eq!(run(&cmd), 0);
+            assert_eq!(run(&cmd, None), 0);
             cmd.format = Format::Tty;
-            assert_eq!(run(&cmd), 0);
+            assert_eq!(run(&cmd, None), 0);
             cmd.format = Format::Jsonl;
-            assert_eq!(run(&cmd), 0);
+            assert_eq!(run(&cmd, None), 0);
+            assert_eq!(run(&cmd, Some("s")), 0);
             let miss = cbeta_core::parse_query("完全不存在的词xyz").unwrap();
             cmd.parsed_query = Some(miss);
             cmd.format = Format::Json;
-            assert_eq!(run(&cmd), 1);
+            assert_eq!(run(&cmd, None), 1);
         });
     }
 
@@ -267,18 +295,30 @@ mod tests {
     #[test]
     fn highlight_color_s2t_empty_term_and_no_match() {
         let text = "真性有為空";
-        assert_eq!(highlight(text, &[], true), text);
-        assert_eq!(highlight(text, &["空".into()], false), text);
+        assert_eq!(highlight(text, &[], true, None), text);
+        assert_eq!(highlight(text, &["空".into()], false, None), text);
         let terms = vec![String::new(), "有为空".into()];
-        let h = highlight(text, &terms, true);
+        let h = highlight(text, &terms, true, None);
         assert!(h.contains("\x1b[1;31m"));
-        assert_eq!(highlight(text, &["不存在".into()], true), text);
-        let h2 = highlight(text, &["有為空".into()], true);
+        assert_eq!(highlight(text, &["不存在".into()], true, None), text);
+        let h2 = highlight(text, &["有為空".into()], true, None);
         assert!(h2.contains("\x1b[1;31m"));
+        let simp = cbeta_parse::t2s(text);
+        let h3 = highlight(&simp, &["有为空".into()], true, Some("s"));
+        assert!(h3.contains("\x1b[1;31m"));
     }
 
     #[test]
     fn print_human_emits_rank_line() {
-        print_human(&[sample_hit()], &["真性".into()], false);
+        print_human(&[sample_hit()], &["真性".into()], false, None);
+    }
+
+    #[test]
+    fn display_hit_script_s_keeps_line_id() {
+        let h = sample_hit();
+        let d = display_hit(&h, Some("s"));
+        assert_eq!(d.line_id, h.line_id);
+        assert!(d.text_raw.contains('为'));
+        assert!(!d.text_raw.contains('為'));
     }
 }

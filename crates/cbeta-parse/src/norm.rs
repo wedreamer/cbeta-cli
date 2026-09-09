@@ -1,4 +1,5 @@
 //! Search-key normalization: NFKC → OpenCC s2t → gaiji → strip punct.
+//! Display-only Traditional → Simplified lives in [`t2s`] (not the index key path).
 
 use crate::gaiji::GaijiMap;
 use ferrous_opencc::config::BuiltinConfig;
@@ -20,14 +21,31 @@ fn s2t_engine() -> Option<&'static OpenCC> {
         .as_ref()
 }
 
+/// Shared OpenCC t2s converter for `--script s` display only.
+fn t2s_engine() -> Option<&'static OpenCC> {
+    use std::sync::OnceLock;
+    static ENGINE: OnceLock<Option<OpenCC>> = OnceLock::new();
+    ENGINE
+        .get_or_init(|| OpenCC::from_config(BuiltinConfig::Tw2s).ok())
+        .as_ref()
+}
+
 /// NFKC normalize a string.
 pub fn nfkc(text: &str) -> String {
     text.nfkc().collect()
 }
 
-/// Simplified → Traditional via OpenCC (display stays 繁體; no t2s).
+/// Simplified → Traditional via OpenCC (search/index key space).
 pub fn s2t(text: &str) -> String {
     match s2t_engine() {
+        Some(cc) => cc.convert(text),
+        None => text.to_string(),
+    }
+}
+
+/// Traditional → Simplified for human display (`--script s`). Never used on `line_id`.
+pub fn t2s(text: &str) -> String {
+    match t2s_engine() {
         Some(cc) => cc.convert(text),
         None => text.to_string(),
     }
@@ -108,5 +126,14 @@ mod tests {
         let g = GaijiMap::default();
         let out = normalize_query("\u{FF21}空", &g);
         assert!(out.starts_with('A'), "got {out}");
+    }
+
+    #[test]
+    fn t2s_wei() {
+        // Given: traditional 為
+        // When: display-side t2s
+        // Then: simplified 为 (index/search keys stay s2t)
+        assert_eq!(t2s("為"), "为");
+        assert_eq!(t2s("真性有為空"), "真性有为空");
     }
 }
