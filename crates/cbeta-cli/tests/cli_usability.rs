@@ -289,3 +289,128 @@ fn mode_near_accepted_unknown_mode_exits_2() {
     );
     assert_eq!(bad.status.code(), Some(2), "unknown --mode must exit 2");
 }
+
+#[test]
+fn explain_json_plus_is_near_ordered_false_window_30() {
+    // Given: no index needed for --explain --json (Command dump)
+    let (corpus, index) = built();
+    // When: scholar asks 空性+缘生 with explain JSON
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--explain", "--json", "空性+缘生"],
+    );
+    let stdout = stdout_utf8(&out);
+    // Then: Command dump, mode=near, ordered=false, within_chars=30, two clauses
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "explain near; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; {stdout}"));
+    assert!(
+        v.get("hits").is_none(),
+        "--explain --json must dump Command not hits; got {stdout}"
+    );
+    let pq = &v["parsed_query"];
+    assert_eq!(pq["mode"], "near");
+    assert_eq!(pq["ordered"], false);
+    assert_eq!(pq["within_chars"], 30);
+    let clauses = pq["clauses"].as_array().expect("clauses array");
+    assert_eq!(clauses.len(), 2, "two clauses; got {pq}");
+    assert_eq!(v["script"], serde_json::Value::Null);
+}
+
+#[test]
+fn explain_json_star_is_before_ordered_true() {
+    let (corpus, index) = built();
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--explain", "--json", "空性*缘生"],
+    );
+    assert_eq!(out.status.code(), Some(0));
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("json");
+    let pq = &v["parsed_query"];
+    assert_eq!(pq["mode"], "before");
+    assert_eq!(pq["ordered"], true);
+    assert_eq!(pq["within_chars"], 30);
+}
+
+#[test]
+fn explain_json_near_n_sets_within_chars() {
+    let (corpus, index) = built();
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--explain", "--json", "真如 NEAR/16 缘起"],
+    );
+    assert_eq!(out.status.code(), Some(0));
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("json");
+    let pq = &v["parsed_query"];
+    assert_eq!(pq["mode"], "near");
+    assert_eq!(pq["within_chars"], 16);
+    assert_eq!(pq["ordered"], false);
+}
+
+#[test]
+fn explain_json_question_is_wildcard() {
+    let (corpus, index) = built();
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--explain", "--json", "莲?色"],
+    );
+    assert_eq!(out.status.code(), Some(0));
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["parsed_query"]["mode"], "wildcard");
+}
+
+#[test]
+fn explain_json_script_s_on_command() {
+    let (corpus, index) = built();
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--script", "s", "--explain", "--json", "空性"],
+    );
+    assert_eq!(out.status.code(), Some(0));
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["script"], "s");
+}
+
+#[test]
+fn work_filter_t1578_all_hits_same_work() {
+    // Given: mini has T0235 + T1578
+    let (corpus, index) = built();
+    // When: --work T1578 on a phrase present in T1578
+    let out = run(
+        &corpus,
+        &index,
+        &["search", "--work", "T1578", "--json", "真性有为空"],
+    );
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "--work T1578; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; {stdout}"));
+    let hits = v["hits"].as_array().expect("hits");
+    assert!(!hits.is_empty(), "expected hits; {stdout}");
+    // Then: every hit is work_id T1578
+    for h in hits {
+        assert_eq!(
+            h["work_id"], "T1578",
+            "all hits must be T1578; got {h}"
+        );
+    }
+}
