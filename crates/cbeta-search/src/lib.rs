@@ -1,4 +1,4 @@
-//! Keyword / phrase / near-as-AND search over a CBETA Tantivy index.
+//! Keyword / phrase / near (2-gram recall + char-span confirm) search.
 
 #![deny(missing_docs)]
 
@@ -7,6 +7,7 @@ mod error;
 mod hitmap;
 mod open;
 mod query_build;
+mod span;
 mod verify;
 
 pub use context::{get_context, list_work_juan, GetContext};
@@ -18,13 +19,17 @@ use cbeta_core::{Filters, Hit, ParsedQuery};
 use cbeta_parse::GaijiMap;
 use tantivy::collector::TopDocs;
 use tantivy::query::TermQuery;
-use tantivy::schema::{IndexRecordOption, Term};
+use tantivy::schema::{IndexRecordOption, TantivyDocument, Term};
 
-use crate::hitmap::{collect_hits, doc_to_hit};
+use crate::hitmap::{collect_hits, doc_text_norm, doc_to_hit, passes_filters};
 use crate::query_build::build_query;
+use crate::span::{confirm_span, needs_span_confirm};
 
 /// Default max hits returned to the CLI.
 pub const DEFAULT_LIMIT: usize = 50;
+
+/// Oversample factor before char-span confirm cuts to `limit`.
+const CONFIRM_OVERSAMPLE: usize = 8;
 
 /// Run a parsed query against the active artifact under `index_root`.
 pub fn search(
@@ -38,8 +43,48 @@ pub fn search(
     let searcher = reader.searcher();
     let gaiji = GaijiMap::default();
     let query = build_query(parsed, &fields, &gaiji)?;
-    let top = searcher.search(&*query, &TopDocs::with_limit(limit.max(1)))?;
-    collect_hits(&searcher, &fields, &top, filters)
+    let want = limit.max(1);
+    let fetch = if needs_span_confirm(&parsed.mode) {
+        want.saturating_mul(CONFIRM_OVERSAMPLE).max(want)
+    } else {
+        want
+    };
+    let top = searcher.search(&*query, &TopDocs::with_limit(fetch))?;
+    if needs_span_confirm(&parsed.mode) {
+        return confirm_hits(&searcher, &fields, &top, filters, parsed, &gaiji, want);
+    }
+    let mut hits = collect_hits(&searcher, &fields, &top, filters)?;
+    if hits.len() > want {
+        hits.truncate(want);
+    }
+    Ok(hits)
+}
+
+fn confirm_hits(
+    searcher: &tantivy::Searcher,
+    fields: &cbeta_index::LineSchema,
+    top: &[(f32, tantivy::DocAddress)],
+    filters: &Filters,
+    parsed: &ParsedQuery,
+    gaiji: &GaijiMap,
+    limit: usize,
+) -> Result<Vec<Hit>> {
+    let mut hits = Vec::with_capacity(limit.min(top.len()));
+    for (score, addr) in top {
+        if hits.len() >= limit {
+            break;
+        }
+        let doc: TantivyDocument = searcher.doc(*addr)?;
+        let hit = doc_to_hit(&doc, fields, *score);
+        if !passes_filters(&hit, filters) {
+            continue;
+        }
+        let text_norm = doc_text_norm(&doc, fields);
+        if confirm_span(&text_norm, parsed, gaiji) {
+            hits.push(hit);
+        }
+    }
+    Ok(hits)
 }
 
 /// Lookup one line by exact `line_id` STRING field.
@@ -150,6 +195,70 @@ mod tests {
         assert!(filtered.is_empty());
 
         assert!(search(&dir, &near, &Filters::default(), 0).is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn plant_near_lines() -> Vec<IndexableLine> {
+        let meta = |line_id: &str, text: &str| IndexableLine {
+            line: ParsedLine {
+                line_id: line_id.into(),
+                work_id: "T1578".into(),
+                juan: 1,
+                text_raw: text.into(),
+                lb_n: "0001a01".into(),
+            },
+            title: "大乘掌珍論".into(),
+            author: "清辯菩薩,玄奘".into(),
+            citation: "(CBETA 2026.R2, T30, no. 1578, p. 1, a01)".into(),
+            cbeta_tag: "2026R2".into(),
+        };
+        vec![
+            // covering span 2+5+2 = 9 ≤ 16
+            meta("T30n1578_p0001a01", &format!("真如{}缘起", "中".repeat(5))),
+            // covering span 2+20+2 = 24 > 16
+            meta("T30n1578_p0001a02", &format!("真如{}缘起", "中".repeat(20))),
+            // reverse order for BEFORE
+            meta("T30n1578_p0001a03", &format!("缘起{}真如", "中".repeat(3))),
+            // + / NEAR/30 close
+            meta("T30n1578_p0001a04", &format!("空性{}缘生", "中".repeat(20))),
+            {
+                let mut s = sample();
+                s.remove(0)
+            },
+        ]
+    }
+
+    #[test]
+    fn span_near_16_accepts_via_search() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-span-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        write_artifact(
+            &dir,
+            "2026R2",
+            "spanok",
+            &plant_near_lines(),
+            &GaijiMap::default(),
+        )
+        .unwrap();
+        fs::write(dir.join("CURRENT"), "2026R2-spanok\n").unwrap();
+        let pq = cbeta_core::parse_query("真如 NEAR/16 缘起").expect("parse");
+        let hits = search(&dir, &pq, &Filters::default(), 10).unwrap();
+        assert!(
+            hits.iter().any(|h| h.line_id == "T30n1578_p0001a01"),
+            "expected close line; got {:?}",
+            hits.iter().map(|h| &h.line_id).collect::<Vec<_>>()
+        );
+        assert!(
+            !hits.iter().any(|h| h.line_id == "T30n1578_p0001a02"),
+            "far line must be dropped by span"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

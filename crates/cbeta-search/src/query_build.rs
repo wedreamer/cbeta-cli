@@ -44,9 +44,10 @@ pub fn build_query(
             }
         }
         "near" | "before" => {
-            // P0/P1-dsl: Boolean AND of each term subquery (no window confirm yet).
+            // Recall: Boolean AND of each term's consecutive char 2-grams
+            // (1-char → unigram). Char-span confirm lives in `span`.
             let positives: Vec<Box<dyn Query>> =
-                norms.iter().map(|t| term_or_phrase(t, fields)).collect();
+                norms.iter().map(|t| term_char_ngrams(t, fields)).collect();
             Ok(boolean_with_excluded(
                 positives,
                 Occur::Must,
@@ -111,6 +112,44 @@ fn term_or_phrase(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
     Box::new(PhraseQuery::new(terms))
 }
 
+/// Near/before recall for one normalized term: consecutive char 2-gram AND.
+///
+/// Single-char terms stay a unigram [`TermQuery`]. Multi-char terms do **not**
+/// use PhraseQuery slop — each adjacent 2-gram is a Must TermQuery (tokenizer
+/// already indexes 2-grams on `text_norm`).
+fn term_char_ngrams(norm: &str, fields: &LineSchema) -> Box<dyn Query> {
+    let chars: Vec<char> = norm.chars().collect();
+    if chars.is_empty() {
+        let term = Term::from_field_text(fields.text_norm, "");
+        return Box::new(TermQuery::new(term, IndexRecordOption::Basic));
+    }
+    if chars.len() == 1 {
+        let s: String = chars.iter().collect();
+        let term = Term::from_field_text(fields.text_norm, &s);
+        return Box::new(TermQuery::new(
+            term,
+            IndexRecordOption::WithFreqsAndPositions,
+        ));
+    }
+    let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(chars.len() - 1);
+    for i in 0..chars.len() - 1 {
+        let bigram: String = chars[i..i + 2].iter().collect();
+        let term = Term::from_field_text(fields.text_norm, &bigram);
+        clauses.push((
+            Occur::Must,
+            Box::new(TermQuery::new(
+                term,
+                IndexRecordOption::WithFreqsAndPositions,
+            )),
+        ));
+    }
+    if clauses.len() == 1 {
+        let (_, q) = clauses.remove(0);
+        return q;
+    }
+    Box::new(BooleanQuery::new(clauses))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +195,10 @@ mod tests {
             let built = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
             let _ = built;
         }
+        let q = pq("真如+缘起", "near", vec!["真如", "缘起"], Some(16), None);
+        let _ = build_query(&q, &fields(), &GaijiMap::default()).unwrap();
+        let _ = term_char_ngrams("空", &fields());
+        let _ = term_char_ngrams("空性缘", &fields());
     }
 
     #[test]
