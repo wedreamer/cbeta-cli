@@ -274,7 +274,14 @@ fn mode_near_accepted_unknown_mode_exits_2() {
     let ok = run(
         &corpus,
         &index,
-        &["search", "--mode", "near", "--explain", "--json", "空性+缘生"],
+        &[
+            "search",
+            "--mode",
+            "near",
+            "--explain",
+            "--json",
+            "空性+缘生",
+        ],
     );
     assert_eq!(
         ok.status.code(),
@@ -282,11 +289,7 @@ fn mode_near_accepted_unknown_mode_exits_2() {
         "--mode near explain; stderr={}",
         String::from_utf8_lossy(&ok.stderr)
     );
-    let bad = run(
-        &corpus,
-        &index,
-        &["search", "--mode", "fuzzy", "空"],
-    );
+    let bad = run(&corpus, &index, &["search", "--mode", "fuzzy", "空"]);
     assert_eq!(bad.status.code(), Some(2), "unknown --mode must exit 2");
 }
 
@@ -332,8 +335,7 @@ fn explain_json_star_is_before_ordered_true() {
         &["search", "--explain", "--json", "空性*缘生"],
     );
     assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     let pq = &v["parsed_query"];
     assert_eq!(pq["mode"], "before");
     assert_eq!(pq["ordered"], true);
@@ -349,8 +351,7 @@ fn explain_json_near_n_sets_within_chars() {
         &["search", "--explain", "--json", "真如 NEAR/16 缘起"],
     );
     assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     let pq = &v["parsed_query"];
     assert_eq!(pq["mode"], "near");
     assert_eq!(pq["within_chars"], 16);
@@ -360,14 +361,9 @@ fn explain_json_near_n_sets_within_chars() {
 #[test]
 fn explain_json_question_is_wildcard() {
     let (corpus, index) = built();
-    let out = run(
-        &corpus,
-        &index,
-        &["search", "--explain", "--json", "莲?色"],
-    );
+    let out = run(&corpus, &index, &["search", "--explain", "--json", "莲?色"]);
     assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     assert_eq!(v["parsed_query"]["mode"], "wildcard");
 }
 
@@ -380,8 +376,7 @@ fn explain_json_script_s_on_command() {
         &["search", "--script", "s", "--explain", "--json", "空性"],
     );
     assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     assert_eq!(v["script"], "s");
 }
 
@@ -408,9 +403,6 @@ fn work_filter_t1578_all_hits_same_work() {
     assert!(!hits.is_empty(), "expected hits; {stdout}");
     // Then: every hit is work_id T1578
     for h in hits {
-        assert_eq!(
-            h["work_id"], "T1578",
-            "all hits must be T1578; got {h}"
-        );
+        assert_eq!(h["work_id"], "T1578", "all hits must be T1578; got {h}");
     }
 }

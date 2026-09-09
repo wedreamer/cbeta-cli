@@ -34,9 +34,7 @@ fn main() {
     };
 
     // WHY: clap --mode overrides DSL-inferred mode for agent/human force-pick.
-    const MODES: &[&str] = &[
-        "keyword", "phrase", "near", "before", "wildcard", "boolean",
-    ];
+    const MODES: &[&str] = &["keyword", "phrase", "near", "before", "wildcard", "boolean"];
     if let Some(flag) = out.mode.as_deref() {
         match parsed.as_mut() {
             Some(pq) if MODES.contains(&flag) => {
