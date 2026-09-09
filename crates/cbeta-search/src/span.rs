@@ -225,4 +225,92 @@ mod tests {
         assert_eq!(pq.within_chars, Some(30));
         assert_eq!(pq.ordered, Some(false));
     }
+
+    #[test]
+    fn non_near_mode_skips_span_gate() {
+        // Given: keyword mode (not near/before)
+        // When: confirm_span
+        // Then: always true without looking at distance
+        let pq = parse_query("真如").expect("parse");
+        assert_eq!(pq.mode, "keyword");
+        assert!(confirm_span(&norm("无关文本"), &pq, &GaijiMap::default()));
+        assert!(needs_span_confirm("near"));
+        assert!(needs_span_confirm("before"));
+        assert!(!needs_span_confirm("keyword"));
+    }
+
+    #[test]
+    fn empty_or_missing_terms_edge() {
+        // Given: near query whose terms normalize empty, or missing in hay
+        // When: confirm_span
+        // Then: empty norms → true; missing term → false; single term present → true
+        let gaiji = GaijiMap::default();
+        let mut empty_terms = parse_query("真如 NEAR/8 缘起").expect("parse");
+        empty_terms.terms = vec![String::new(), String::new()];
+        assert!(confirm_span(&norm("真如缘起"), &empty_terms, &gaiji));
+
+        let mut one = parse_query("真如 NEAR/8 缘起").expect("parse");
+        one.terms = vec!["真如".into()];
+        assert!(confirm_span(&norm("真如在此"), &one, &gaiji));
+        assert!(!confirm_span(&norm("缘起在此"), &one, &gaiji));
+
+        assert!(!ok("只有真如", "真如 NEAR/8 缘起"));
+        assert!(find_spans("空", "").is_empty());
+        assert!(find_spans("空", "空性").is_empty());
+    }
+
+    #[test]
+    fn near_three_terms_unordered_and_ordered_window() {
+        // Given: three terms on text_norm
+        // When: near (any order) vs before (strict order) with tight window
+        // Then: near accepts any permutation in window; before rejects reverse; far fails
+        let close = format!("甲{}乙{}丙", "中".repeat(2), "中".repeat(2));
+        // covering ~ 1+2+1+2+1 = 7
+        let mut pq = parse_query("甲+乙").expect("parse");
+        pq.terms = vec!["甲".into(), "乙".into(), "丙".into()];
+        pq.mode = "near".into();
+        pq.ordered = Some(false);
+        pq.within_chars = Some(16);
+        let gaiji = GaijiMap::default();
+        assert!(confirm_span(&norm(&close), &pq, &gaiji));
+
+        let reverse = format!("丙{}乙{}甲", "中".repeat(2), "中".repeat(2));
+        assert!(confirm_span(&norm(&reverse), &pq, &gaiji));
+
+        pq.mode = "before".into();
+        pq.ordered = Some(true);
+        assert!(confirm_span(&norm(&close), &pq, &gaiji));
+        assert!(!confirm_span(&norm(&reverse), &pq, &gaiji));
+
+        let far = format!("甲{}乙{}丙", "中".repeat(20), "中".repeat(20));
+        pq.mode = "near".into();
+        pq.ordered = Some(false);
+        pq.within_chars = Some(10);
+        assert!(!confirm_span(&norm(&far), &pq, &gaiji));
+
+        // Ordered chain aborts when partial covering already exceeds window.
+        pq.mode = "before".into();
+        pq.ordered = Some(true);
+        pq.within_chars = Some(4);
+        let wide = format!("甲{}乙{}丙", "中".repeat(3), "中".repeat(3));
+        assert!(!confirm_span(&norm(&wide), &pq, &gaiji));
+    }
+
+    #[test]
+    fn next_permutation_exhausts_orders() {
+        // Given: small order vector
+        // When: next_permutation until false
+        // Then: visits all n! orders then stops; n<2 is false
+        let mut a = vec![0usize, 1, 2];
+        let mut seen = 0usize;
+        loop {
+            seen += 1;
+            if !next_permutation(&mut a) {
+                break;
+            }
+        }
+        assert_eq!(seen, 6);
+        assert!(!next_permutation(&mut [0usize]));
+        assert!(!next_permutation(&mut []));
+    }
 }
