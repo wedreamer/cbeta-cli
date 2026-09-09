@@ -6,6 +6,7 @@ mod cmd_build;
 mod cmd_catalog;
 mod cmd_get;
 mod cmd_search;
+mod copy_fmt;
 mod env_paths;
 mod scope_io;
 
@@ -13,6 +14,7 @@ use cbeta_core::{parse_query, Action, Command};
 use clap::Parser;
 
 use cli_args::{format_of, resolve, Cli};
+use cmd_get::GetOpts;
 
 fn main() {
     let out = resolve(Cli::parse());
@@ -56,6 +58,11 @@ fn main() {
         parsed_query: parsed,
     };
 
+    let get_opts = GetOpts {
+        context: out.context,
+        copy: out.copy,
+    };
+
     // Product handlers first; remaining actions stay scaffold (Command dump / exit 2).
     match cmd.action {
         Action::Build => std::process::exit(cmd_build::run(&cmd)),
@@ -74,7 +81,9 @@ fn main() {
             }
         }
         Action::Search => std::process::exit(cmd_search::run(&cmd)),
-        Action::Get => std::process::exit(cmd_get::run(&cmd)),
+        Action::Get | Action::Read | Action::Cite => {
+            std::process::exit(cmd_get::run(&cmd, get_opts))
+        }
         Action::Catalog => std::process::exit(cmd_catalog::run_catalog(&cmd)),
         Action::Info => std::process::exit(cmd_catalog::run_info(&cmd)),
         Action::Verify if out.json => {

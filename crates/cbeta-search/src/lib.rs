@@ -2,11 +2,13 @@
 
 #![deny(missing_docs)]
 
+mod context;
 mod error;
 mod hitmap;
 mod open;
 mod query_build;
 
+pub use context::{get_context, list_work_juan, GetContext};
 pub use error::{Error, Result};
 pub use open::{active_artifact, open_search_index};
 
@@ -166,6 +168,155 @@ mod tests {
             Err(Error::NoIndex(_))
         ));
         assert!(matches!(get_line(&dir, "x"), Err(Error::NoIndex(_))));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn line(id: &str, text: &str) -> IndexableLine {
+        let lb = id
+            .split_once("_p")
+            .map(|(_, r)| r.to_string())
+            .unwrap_or_default();
+        IndexableLine {
+            line: ParsedLine {
+                line_id: id.into(),
+                work_id: "T1578".into(),
+                juan: 1,
+                text_raw: text.into(),
+                lb_n: lb,
+            },
+            title: "大乘掌珍論".into(),
+            author: "清辯菩薩,玄奘".into(),
+            citation: format!(
+                "(CBETA 2026.R2, T30, no. 1578, p. 268, {})",
+                &id[id.len().saturating_sub(3)..]
+            ),
+            cbeta_tag: "2026R2".into(),
+        }
+    }
+
+    fn neighbor_fixture() -> Vec<IndexableLine> {
+        // Non-contiguous lb numbers: arithmetic on b21 must NOT invent b22.
+        vec![
+            line("T30n1578_p0268b10", "鄰前四"),
+            line("T30n1578_p0268b12", "鄰前三"),
+            line("T30n1578_p0268b14", "鄰前二"),
+            line("T30n1578_p0268b16", "鄰前一"),
+            line("T30n1578_p0268b21", "真性有為空"),
+            line("T30n1578_p0268b30", "鄰後一"),
+            line("T30n1578_p0268b32", "鄰後二"),
+            line("T30n1578_p0268b34", "鄰後三"),
+            line("T30n1578_p0268b36", "鄰後四"),
+            line("T30n1578_p0268b40", "鄰後五"),
+        ]
+    }
+
+    fn write_fixture(lines: &[IndexableLine], tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-search-ctx-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        write_artifact(&dir, "2026R2", tag, lines, &GaijiMap::default()).unwrap();
+        fs::write(dir.join("CURRENT"), format!("2026R2-{tag}\n")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn get_context_radius_4_includes_neighbors() {
+        // Given: sorted line_ids with gaps around b21
+        let dir = write_fixture(&neighbor_fixture(), "nbr");
+        // When: radius 4 around the real verse line
+        let got = get_context(&dir, "T30n1578_p0268b21", 4)
+            .expect("ok")
+            .expect("found");
+        // Then: center hit + 4 before + 4 after by sorted line_id (not arithmetic)
+        assert_eq!(got.hit.line_id, "T30n1578_p0268b21");
+        assert_eq!(got.context.len(), 8);
+        let ids: Vec<_> = got.context.iter().map(|h| h.line_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "T30n1578_p0268b10",
+                "T30n1578_p0268b12",
+                "T30n1578_p0268b14",
+                "T30n1578_p0268b16",
+                "T30n1578_p0268b30",
+                "T30n1578_p0268b32",
+                "T30n1578_p0268b34",
+                "T30n1578_p0268b36",
+            ]
+        );
+        assert!(!ids.iter().any(|id| id.contains("b22")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn get_line_missing_is_none() {
+        // Given: index with only b21 neighbors fixture
+        let dir = write_fixture(&neighbor_fixture(), "miss");
+        // When: ghost a12 (negative only)
+        let miss = get_context(&dir, "T30n1578_p0268a12", 4).expect("ok");
+        // Then: None, not an error
+        assert!(miss.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_work_juan_t0235() {
+        // Given: T0235 juan 1 lines mixed with T1578
+        let mut lines = neighbor_fixture();
+        lines.push(IndexableLine {
+            line: ParsedLine {
+                line_id: "T08n0235_p0748c17".into(),
+                work_id: "T0235".into(),
+                juan: 1,
+                text_raw: "如是我聞".into(),
+                lb_n: "0748c17".into(),
+            },
+            title: "金剛般若波羅蜜經".into(),
+            author: "鳩摩羅什".into(),
+            citation: "(CBETA 2026.R2, T08, no. 235, p. 748, c17)".into(),
+            cbeta_tag: "2026R2".into(),
+        });
+        lines.push(IndexableLine {
+            line: ParsedLine {
+                line_id: "T08n0235_p0748c18".into(),
+                work_id: "T0235".into(),
+                juan: 1,
+                text_raw: "一時佛在".into(),
+                lb_n: "0748c18".into(),
+            },
+            title: "金剛般若波羅蜜經".into(),
+            author: "鳩摩羅什".into(),
+            citation: "(CBETA 2026.R2, T08, no. 235, p. 748, c18)".into(),
+            cbeta_tag: "2026R2".into(),
+        });
+        lines.push(IndexableLine {
+            line: ParsedLine {
+                line_id: "T08n0235_p0750a01".into(),
+                work_id: "T0235".into(),
+                juan: 2,
+                text_raw: "他卷".into(),
+                lb_n: "0750a01".into(),
+            },
+            title: "金剛般若波羅蜜經".into(),
+            author: "鳩摩羅什".into(),
+            citation: "(CBETA 2026.R2, T08, no. 235, p. 750, a01)".into(),
+            cbeta_tag: "2026R2".into(),
+        });
+        let dir = write_fixture(&lines, "t0235");
+        // When: list work+juan
+        let hits = list_work_juan(&dir, "T0235", 1).expect("list");
+        // Then: only juan 1, sorted by line_id
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].line_id, "T08n0235_p0748c17");
+        assert_eq!(hits[1].line_id, "T08n0235_p0748c18");
+        assert!(hits.iter().all(|h| h.work_id == "T0235" && h.juan == 1));
         let _ = fs::remove_dir_all(&dir);
     }
 }
