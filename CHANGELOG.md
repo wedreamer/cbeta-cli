@@ -34,10 +34,11 @@ P0, a human can search:
 
 P1, proximity, verification, and MCP:
 
-- Query DSL parsing: ordered phrases, `AND` / `OR` / `NOT`, single-char `?`
-  wildcard (max 2 per term; engine hits such as `莲?色` → 青蓮色/紅蓮色),
-  `NEAR/N`, and the CBReader aliases `+` (near/30) and `*` (before/30).
-  `search --explain` shows the parsed query.
+- Query DSL parsing: ordered phrases, `&` (AND) / `,` (OR) / `-` or English
+  `NOT` (exclude), single-char `?` wildcard (max 2 per term; engine hits such
+  as `莲?色` → 青蓮色/紅蓮色), `NEAR/N`, and the CBReader aliases `+`
+  (near/30) and `*` (before/30). `search --explain` shows the parsed query.
+  English words `AND` / `OR` are not operators.
 - NEAR/BEFORE recall via 2-gram Boolean AND with char-span confirmation on
   stored `text_norm`; distance is measured in normalized Han characters, not
   tokens.
@@ -90,11 +91,11 @@ Licensing and scope notes for this release:
 ### Not in 0.1.0
 
 Planned surfaces intentionally left out of this release: `--window` result
-windowing, the built-in pager, JSONL-by-default piping, `semantic_search`
-(P3), and publishing to crates.io. Install from GitHub Releases or
-`cargo install --locked --git` / `--path` (see README). `catalog --author`
-/ `--title` need populated catalog.jsonl fields; the 2026R2 sidecar currently
-exports those as JSON null.
+windowing, the built-in pager, JSONL-by-default piping, `--category`, the
+`fuzzy` engine, `semantic_search` (P3), and publishing to crates.io. Install
+from GitHub Releases or `cargo install --locked --git` / `--path` (see
+README). `catalog --author` / `--title` need populated catalog.jsonl fields;
+the 2026R2 sidecar currently exports those as JSON null.
 
 [Unreleased]: https://github.com/wedreamer/cbeta-cli/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/wedreamer/cbeta-cli/releases/tag/v0.1.0

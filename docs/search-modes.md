@@ -7,7 +7,7 @@ CBReader default proximity is 30 characters; agents should pass `distance` expli
 
 | CLI | MCP | Purpose |
 | --- | --- | --- |
-| `cbeta search` | `cbeta_search` | lexical / proximity / boolean / fuzzy / wildcard |
+| `cbeta search` | `cbeta_search` | lexical / proximity / boolean / wildcard (`fuzzy` planned) |
 | `cbeta verify` | `cbeta_verify_quote` | original-text check + similar sentences |
 | `cbeta get` | `cbeta_get_passage` | fetch context by line_id |
 | `cbeta catalog` | `cbeta_list_catalog` | canons / works / authors / categories |
@@ -22,7 +22,7 @@ CBReader default proximity is 30 characters; agents should pass `distance` expli
 | `phrase` | exact adjacent sequence, 偈颂 / 术语 |
 | `near` | A within N chars of B, order ignored |
 | `before` | A then B within N chars, order required |
-| `boolean` | AND / OR / NOT of terms, phrases, or near-clauses |
+| `boolean` | `&` AND / `,` OR / `-` or English `NOT` exclude (no lexical `AND`/`OR`) |
 | `fuzzy` | **planned** — 1–2 char typo / 异体 after n-gram recall (no engine path today) |
 | `wildcard` | unknown single char `?`, max 2 per term (shipped; 2026R2 `莲?色` hits 青蓮色/紅蓮色) |
 | `dsl` | power-user string: CBReader `+ * & , - ?` or `NEAR/16` |
@@ -55,7 +55,7 @@ Preferred agent string (self-describing):
 ```text
 空性 NEAR/16 缘生
 真如 BEFORE/8 依他起 NOT 外道
-莲?色 AND 阿罗汉
+莲?色&阿罗汉
 ```
 
 Accepted CBReader aliases (parser only; do not document these as the agent API):

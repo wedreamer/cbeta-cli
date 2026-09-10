@@ -108,7 +108,7 @@ TTY 默认人可读：高亮、`line_id`、经名、作译者。`--json` 输出�
 | phrase | `cbeta search --mode phrase '真如远离'` | 已落地 |
 | near | `cbeta search '空性 NEAR/16 缘生'` 或 `'空性+缘生'` | 已落地（2-gram 召回 + 字符 span 确认） |
 | before | `cbeta search '空性 BEFORE/16 缘生'` 或 `'空性*缘生'` | 已落地 |
-| boolean | `AND / OR / NOT`，CBReader `& , -` | 已落地 |
+| boolean | `&`（AND）、`,`（OR）、`-` 或 `NOT`（排除） | 已落地 |
 | wildcard | `'莲?色'` | 已落地（单字 `?`，每词最多 2 个；2026R2 可命中青蓮色/紅蓮色） |
 | fuzzy | 1–2 字误差 / 异体 | **planned**，引擎未落地 |
 | verify | 是否原文；不是则返近句 | 已落地 |
