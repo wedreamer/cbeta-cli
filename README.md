@@ -9,7 +9,7 @@ cbeta 真性有为空
 数据仓库：[wedreamer/cbeta-corpus](https://github.com/wedreamer/cbeta-corpus)
 跟踪：[#1 v0.1 人用最小闭环](https://github.com/wedreamer/cbeta-cli/issues/1)
 
-> 状态（**2026-09-10**，v0.1.0）：**P0 + P1 + P2 已落地**。keyword/phrase/near/before（含字符 span 确认）、`verify`、`get -C`、`read --juan`、`cite`、`--copy`、`catalog`、`info`、`build`、`--explain`、`--script s|t`、stdio/HTTP MCP（五个工具）、REPL、`--save/--from last`、shell completion、`bench`、原子索引切换，均可对 `xml-p5@2026R2` 跑。仍未落地：`--window`、分页器（pager）、管道 JSONL 默认输出、`fuzzy` 检索。
+> 状态（**2026-09-10**）：**v0.1 搜索闭环已落地**；**v0.2 语料生命周期（Now）**：`fetch` / `releases` / `use` / `current` / `pull` / `gc` / `prune` / 增量 `build`。仍 Later：`--window`、分页器（pager）、管道 JSONL 默认、`fuzzy`、P3 semantic。
 
 ## 安装
 
@@ -46,15 +46,15 @@ cd cbeta-cli
 cargo install --locked --path crates/cbeta-cli
 ```
 
-经文不进本仓库：
+经文不进本仓库。首次准备语料与索引：
 
 ```bash
-git clone https://github.com/wedreamer/cbeta-corpus.git
-cd cbeta-corpus && ./scripts/fetch.sh
-cbeta build --scope taisho
+cbeta fetch --release 2026R2 --scope taisho
+cbeta use 2026R2 --scope taisho
+# 或：cbeta build --scope taisho
 ```
 
-索引默认在 `~/.cbeta/index`；语料默认 `~/.cbeta/corpus/2026R2`。
+索引默认在 `~/.cbeta/index`；语料缓存 `~/.cbeta/corpus/<tag>/`，由 `CURRENT` 指向当前标签。镜像可设 `CBETA_GIT_BASE`。
 
 ## 人怎么用
 
