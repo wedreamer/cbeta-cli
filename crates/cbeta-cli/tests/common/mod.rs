@@ -41,3 +41,18 @@ pub fn cbeta_env(corpus: &Path, index: &Path) -> Command {
     cmd.env_remove("HOME");
     cmd
 }
+
+/// True only when `CBETA_FULL=1` (empty / `0` / unset → false).
+///
+/// Scholar / full-corpus tests gate on this; default CI stays fail-closed.
+pub fn cbeta_full_enabled() -> bool {
+    matches!(std::env::var("CBETA_FULL").as_deref(), Ok("1"))
+}
+
+/// Return `true` when the caller must return early (full-corpus lane off).
+///
+/// Prefer this over `#[ignore]` so the test stays compiled and counted in CI.
+#[must_use]
+pub fn skip_unless_cbeta_full() -> bool {
+    !cbeta_full_enabled()
+}
