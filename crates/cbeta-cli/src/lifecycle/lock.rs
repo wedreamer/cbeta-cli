@@ -174,4 +174,81 @@ mod tests {
         let err = validate_release_keys(&lock).unwrap_err();
         assert!(err.contains("master"));
     }
+
+    #[test]
+    fn validate_rejects_empty_schema() {
+        let mut lock = load_lock().unwrap();
+        lock.schema.clear();
+        let err = validate_release_keys(&lock).unwrap_err();
+        assert!(err.contains("schema"));
+    }
+
+    #[test]
+    fn validate_rejects_incomplete_official() {
+        let mut lock = load_lock().unwrap();
+        lock.official.gaiji.clear();
+        let err = validate_release_keys(&lock).unwrap_err();
+        assert!(err.contains("official"));
+    }
+
+    #[test]
+    fn validate_rejects_xml_p5_2018_key() {
+        let mut lock = load_lock().unwrap();
+        lock.releases.insert(
+            "xml-p5-2018-legacy".into(),
+            ReleasePins {
+                xml_p5: "a".into(),
+                metadata: "b".into(),
+                gaiji: "c".into(),
+            },
+        );
+        let err = validate_release_keys(&lock).unwrap_err();
+        assert!(err.contains("xml-p5-2018"));
+    }
+
+    #[test]
+    fn validate_rejects_incomplete_pins() {
+        let mut lock = load_lock().unwrap();
+        lock.releases.insert(
+            "2099R1".into(),
+            ReleasePins {
+                xml_p5: "a".into(),
+                metadata: String::new(),
+                gaiji: "c".into(),
+            },
+        );
+        let err = validate_release_keys(&lock).unwrap_err();
+        assert!(err.contains("incomplete"));
+    }
+
+    #[test]
+    fn tag_without_r_sorts_below_2026r2() {
+        assert_eq!(cmp_release_tag("notag", "2026R2"), std::cmp::Ordering::Less);
+        assert_eq!(
+            cmp_release_tag("2026R2", "2026R1"),
+            std::cmp::Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn resolve_release_unknown_errs() {
+        let lock = load_lock().unwrap();
+        let err = resolve_release("nope", &lock, None).unwrap_err();
+        assert!(err.contains("unknown"));
+    }
+
+    #[test]
+    fn resolve_latest_empty_remote_falls_back() {
+        let lock = load_lock().unwrap();
+        let empty: Vec<String> = vec![];
+        let t = resolve_release("latest", &lock, Some(&empty)).unwrap();
+        assert_eq!(t, "2026R2");
+    }
+
+    #[test]
+    fn lock_tags_contains_2026r2() {
+        let lock = load_lock().unwrap();
+        let tags = lock_tags(&lock);
+        assert!(tags.iter().any(|t| t == "2026R2"));
+    }
 }

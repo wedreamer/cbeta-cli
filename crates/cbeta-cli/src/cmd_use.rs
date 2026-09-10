@@ -236,7 +236,6 @@ mod tests {
         let home = temp_home("incomplete");
         env::remove_var("CBETA_CORPUS");
         env::set_var("HOME", &home);
-        // Tag dir exists but no FETCHED.yaml.
         fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
 
         let mut out = bare_out();
@@ -246,5 +245,116 @@ mod tests {
 
         env::remove_var("HOME");
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_current_success_and_missing() {
+        let _g = env_lock();
+        let home = temp_home("current");
+        env::set_var("HOME", &home);
+        env::remove_var("CBETA_CORPUS");
+        assert_eq!(run_current(&bare_out()), 2);
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        assert_eq!(run_current(&bare_out()), 0);
+        env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn use_requires_tag() {
+        let out = bare_out();
+        assert_eq!(run(&out), 2);
+    }
+
+    #[test]
+    fn resolve_use_scope_taisho_and_ci_minimal() {
+        let _g = env_lock();
+        assert_eq!(resolve_use_scope(Some("taisho")).unwrap(), "taisho");
+        let mini = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini");
+        env::set_var("CBETA_CORPUS", &mini);
+        assert_eq!(resolve_use_scope(None).unwrap(), "ci-minimal");
+        env::remove_var("CBETA_CORPUS");
+    }
+
+    #[test]
+    fn index_needs_build_without_manifest() {
+        let _g = env_lock();
+        let home = temp_home("need-build");
+        env::set_var("HOME", &home);
+        env::set_var("CBETA_INDEX", home.join("idx"));
+        env::set_var("CBETA_CORPUS", home.join("empty-corpus"));
+        fs::create_dir_all(home.join("empty-corpus")).unwrap();
+        assert!(index_needs_build("2026R2", "ci-minimal").unwrap());
+        env::remove_var("HOME");
+        env::remove_var("CBETA_INDEX");
+        env::remove_var("CBETA_CORPUS");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn use_default_writes_default_and_current() {
+        let _g = env_lock();
+        let home = temp_home("default");
+        let mini = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini");
+        env::set_var("HOME", &home);
+        env::set_var("CBETA_INDEX", home.join("idx"));
+        env::set_var("CBETA_CORPUS", &mini);
+
+        let mut out = bare_out();
+        out.default_tag = Some("2026R2".into());
+        out.scope = Some("ci-minimal".into());
+        assert_eq!(run(&out), 0);
+        let cur = fs::read_to_string(home.join(".cbeta/corpus/CURRENT")).unwrap();
+        assert_eq!(cur.trim(), "2026R2");
+        let def = fs::read_to_string(home.join(".cbeta/corpus/DEFAULT")).unwrap();
+        assert_eq!(def.trim(), "2026R2");
+
+        env::remove_var("HOME");
+        env::remove_var("CBETA_INDEX");
+        env::remove_var("CBETA_CORPUS");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn use_incomplete_when_fetched_pins_mismatch() {
+        let _g = env_lock();
+        let home = temp_home("pin-bad");
+        env::remove_var("CBETA_CORPUS");
+        env::set_var("HOME", &home);
+        let lock = load_lock().unwrap();
+        let mut pins = lock.releases.get("2026R2").unwrap().clone();
+        pins.xml_p5 = "a".repeat(40);
+        let dest = home.join(".cbeta/corpus/2026R2");
+        crate::lifecycle::fetched::write_fetched("2026R2", &dest, &pins).unwrap();
+        let mut out = bare_out();
+        out.q = Some("2026R2".into());
+        assert_eq!(run(&out), 2);
+        assert!(!home.join(".cbeta/corpus/CURRENT").exists());
+        env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn index_needs_build_false_after_real_build() {
+        let _g = env_lock();
+        let home = temp_home("built");
+        let mini = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mini");
+        env::set_var("HOME", &home);
+        env::set_var("CBETA_INDEX", home.join("idx"));
+        env::set_var("CBETA_CORPUS", &mini);
+        build_scope_with_full("ci-minimal", true).unwrap();
+        assert!(!index_needs_build("2026R2", "ci-minimal").unwrap());
+        env::remove_var("HOME");
+        env::remove_var("CBETA_INDEX");
+        env::remove_var("CBETA_CORPUS");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn resolve_use_scope_empty_explicit_falls_through() {
+        let _g = env_lock();
+        env::remove_var("CBETA_CORPUS");
+        assert_eq!(resolve_use_scope(Some("")).unwrap(), "taisho");
+        assert_eq!(resolve_use_scope(None).unwrap(), "taisho");
     }
 }
