@@ -44,7 +44,7 @@ pub fn run(cmd: &Command) -> i32 {
     let (index, fields, art) = match open_search_index(&root) {
         Ok(t) => t,
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             return 2;
         }
         Err(e) => {
@@ -296,7 +296,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
         assert_eq!(run(&bench_cmd(Format::Tty)), 0);
         assert_eq!(run(&bench_cmd(Format::Json)), 0);
         std::env::remove_var("CBETA_CORPUS");

@@ -24,7 +24,7 @@ pub fn run(cmd: &Command) -> i32 {
             0
         }
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             2
         }
         Err(e) => {
@@ -122,7 +122,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build_cmd), 0);
+        assert_eq!(crate::cmd_build::run(&build_cmd, false), 0);
         let out = f();
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");

@@ -79,6 +79,9 @@ pub enum Cmds {
     Build {
         #[arg(long)]
         scope: Option<String>,
+        /// Force a full rebuild (skip incremental resume).
+        #[arg(long)]
+        full: bool,
     },
     /// CLI-only micro-benchmark (keyword/phrase/near); not an MCP tool.
     Bench {
@@ -96,6 +99,41 @@ pub enum Cmds {
         /// Target shell (`clap_complete::Shell` value_enum).
         #[arg(value_enum)]
         shell: clap_complete::Shell,
+    },
+    /// Download a pinned corpus release (CLI-only; not an MCP tool).
+    Fetch {
+        #[arg(long)]
+        release: String,
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// List corpus release tags from the embedded lock (CLI-only).
+    Releases {
+        #[arg(long)]
+        remote: bool,
+    },
+    /// Switch active corpus tag or set the default (CLI-only).
+    Use {
+        tag: Option<String>,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long = "default")]
+        default_tag: Option<String>,
+    },
+    /// Print the CURRENT corpus tag (CLI-only).
+    Current,
+    /// Report newer releases; `--apply` fetches without switching (CLI-only).
+    Pull {
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Garbage-collect unused corpus cache (CLI-only).
+    Gc,
+    /// Remove a non-CURRENT corpus tag (CLI-only).
+    Prune {
+        tag: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -186,6 +224,7 @@ mod tests {
             (
                 Cmds::Build {
                     scope: Some("s".into()),
+                    full: false,
                 },
                 Action::Build,
                 Some("s"),
@@ -205,6 +244,35 @@ mod tests {
                 Action::Completion,
                 None,
             ),
+            (
+                Cmds::Fetch {
+                    release: "2026R2".into(),
+                    scope: Some("taisho".into()),
+                },
+                Action::Fetch,
+                Some("2026R2"),
+            ),
+            (Cmds::Releases { remote: false }, Action::Releases, None),
+            (
+                Cmds::Use {
+                    tag: Some("2025R3".into()),
+                    scope: None,
+                    default_tag: None,
+                },
+                Action::Use,
+                Some("2025R3"),
+            ),
+            (Cmds::Current, Action::Current, None),
+            (Cmds::Pull { apply: false }, Action::Pull, None),
+            (Cmds::Gc, Action::Gc, None),
+            (
+                Cmds::Prune {
+                    tag: Some("2025R1".into()),
+                    dry_run: false,
+                },
+                Action::Prune,
+                Some("2025R1"),
+            ),
         ];
         for (cmd, action, q) in cases {
             let mut cli = base_cli();
@@ -219,6 +287,89 @@ mod tests {
                 assert!(out.shell.is_none());
             }
         }
+    }
+
+    #[test]
+    fn resolve_fetch_release_scope() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Fetch {
+            release: "2026R2".into(),
+            scope: Some("taisho".into()),
+        });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Fetch);
+        assert_eq!(out.q.as_deref(), Some("2026R2"));
+        assert_eq!(out.release.as_deref(), Some("2026R2"));
+    }
+
+    #[test]
+    fn resolve_releases_remote() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Releases { remote: true });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Releases);
+        assert!(out.remote);
+        assert!(!out.apply);
+    }
+
+    #[test]
+    fn resolve_use_default() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Use {
+            tag: None,
+            scope: Some("taisho".into()),
+            default_tag: Some("2026R2".into()),
+        });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Use);
+        assert!(out.q.is_none());
+        assert_eq!(out.default_tag.as_deref(), Some("2026R2"));
+    }
+
+    #[test]
+    fn resolve_pull_apply() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Pull { apply: true });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Pull);
+        assert!(out.apply);
+    }
+
+    #[test]
+    fn resolve_build_full() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Build {
+            scope: Some("taisho".into()),
+            full: true,
+        });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Build);
+        assert_eq!(out.q.as_deref(), Some("taisho"));
+        assert!(out.full);
+    }
+
+    #[test]
+    fn resolve_prune_dry_run() {
+        let mut cli = base_cli();
+        cli.command = Some(Cmds::Prune {
+            tag: Some("2025R1".into()),
+            dry_run: true,
+        });
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Prune);
+        assert_eq!(out.q.as_deref(), Some("2025R1"));
+        assert!(out.dry_run);
+    }
+
+    #[test]
+    fn clap_parse_fetch_latest() {
+        let cli =
+            Cli::try_parse_from(["cbeta", "fetch", "--release", "latest", "--scope", "taisho"])
+                .expect("parse fetch --release latest");
+        let out = resolve(cli);
+        assert_eq!(out.action, Action::Fetch);
+        assert_eq!(out.q.as_deref(), Some("latest"));
+        assert_eq!(out.release.as_deref(), Some("latest"));
     }
 
     #[test]

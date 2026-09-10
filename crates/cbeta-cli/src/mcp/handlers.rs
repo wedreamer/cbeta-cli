@@ -227,7 +227,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
     }
 
     #[test]

@@ -1,5 +1,9 @@
 //! `cbeta` binary: clap → [`cbeta_core::Command`] → product handlers.
 
+mod build_assemble;
+mod build_golden;
+mod build_incr;
+mod build_progress;
 mod citation;
 mod cli_args;
 mod cli_resolve;
@@ -7,13 +11,20 @@ mod cmd_bench;
 mod cmd_build;
 mod cmd_catalog;
 mod cmd_completion;
+mod cmd_fetch;
+mod cmd_gc;
 mod cmd_get;
+mod cmd_pull;
+mod cmd_releases;
 mod cmd_repl;
 mod cmd_search;
 mod cmd_serve;
+mod cmd_use;
 mod cmd_verify;
 mod copy_fmt;
 mod env_paths;
+mod index_hint;
+mod lifecycle;
 mod mcp;
 mod scope_io;
 mod session;
@@ -33,15 +44,23 @@ fn main() {
 
     let mut out = resolve(Cli::parse());
 
-    // WHY: completion is clap-only; skip parse_query / Command build entirely.
-    if out.action == Action::Completion {
-        match out.shell {
+    // WHY: completion + lifecycle are CLI-only; skip parse_query / Command build.
+    match out.action {
+        Action::Completion => match out.shell {
             Some(shell) => std::process::exit(cmd_completion::run(shell)),
             None => {
                 eprintln!("internal: completion without shell");
                 std::process::exit(2);
             }
-        }
+        },
+        Action::Fetch => std::process::exit(cmd_fetch::run(&out)),
+        Action::Releases => std::process::exit(cmd_releases::run(&out)),
+        Action::Use => std::process::exit(cmd_use::run(&out)),
+        Action::Current => std::process::exit(cmd_use::run_current(&out)),
+        Action::Pull => std::process::exit(cmd_pull::run(&out)),
+        Action::Gc => std::process::exit(cmd_gc::run(&out)),
+        Action::Prune => std::process::exit(cmd_gc::run_prune(&out)),
+        _ => {}
     }
 
     if let Err(code) = validate_save_from(&out) {
@@ -101,7 +120,7 @@ fn main() {
 
     // Product handlers first; remaining actions stay scaffold (Command dump / exit 2).
     match cmd.action {
-        Action::Build => std::process::exit(cmd_build::run(&cmd)),
+        Action::Build => std::process::exit(cmd_build::run(&cmd, out.full)),
         // --explain (± --json): parse dump only, never hits.
         Action::Search if cmd.explain => {
             if out.json {
@@ -128,7 +147,14 @@ fn main() {
         Action::Bench => std::process::exit(cmd_bench::run(&cmd)),
         Action::Serve => std::process::exit(cmd_serve::run(out.http.as_deref())),
         // Handled before Command construction; unreachable here.
-        Action::Completion => std::process::exit(2),
+        Action::Completion
+        | Action::Fetch
+        | Action::Releases
+        | Action::Use
+        | Action::Current
+        | Action::Pull
+        | Action::Gc
+        | Action::Prune => std::process::exit(2),
     }
 }
 
@@ -173,8 +199,8 @@ fn apply_from_last(out: &mut CliOut) -> Result<(), i32> {
             return Err(2);
         }
     };
-    if session.artifact_id != info.artifact_id {
-        eprintln!("index changed; re-run search");
+    if let Err(msg) = session::session_matches_index(&session, &info) {
+        eprintln!("{msg}");
         return Err(2);
     }
 
@@ -238,6 +264,13 @@ mod tests {
             hit_index: None,
             shell: None,
             http: None,
+            release: None,
+            remote: false,
+            apply: false,
+            full: false,
+            dry_run: false,
+            default_tag: None,
+            scope: None,
         }
     }
 
@@ -295,6 +328,7 @@ mod tests {
                 cbeta_tag: "2026R2".into(),
             }],
             artifact_id: "missing-artifact".into(),
+            cbeta_tag: "2026R2".into(),
         };
         session::save_last(&session).unwrap();
 

@@ -151,7 +151,7 @@ mod tests {
                 context: None,
                 copy: false,
             };
-            assert_eq!(crate::cmd_build::run(&build), 0);
+            assert_eq!(crate::cmd_build::run(&build, false), 0);
             let open = Arc::new(OpenIndex::open(&index_dir).unwrap());
             std::env::remove_var("CBETA_CORPUS");
             std::env::remove_var("CBETA_INDEX");
