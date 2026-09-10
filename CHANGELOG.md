@@ -5,8 +5,51 @@ All notable changes to `cbeta-cli` are documented here, following the
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 v0.1.0 起：离线 CBETA 检索 CLI 的首个人用闭环（P0/P1/P2）。
+v0.2.0：语料生命周期（fetch / use / pull / gc）。
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-09-11
+
+Corpus lifecycle for offline CBETA: fetch a pinned xml-p5 release into
+`~/.cbeta/corpus/<tag>/`, then `use` to build and switch `CURRENT`. Fetch
+never writes CURRENT; `pull --apply` fetches without switching; `gc`/`prune`
+never delete CURRENT. These commands are CLI-only (not MCP tools).
+
+### Added
+
+- `cbeta fetch --release TAG|latest --scope …`: clone pinned xml-p5 / metadata
+  / gaiji and write `FETCHED.yaml` with a concrete tag. `CBETA_GIT_BASE`
+  rewrites `https://github.com` for mirrors. flock + disk precheck. Does not
+  auto-use.
+- `cbeta releases` / `releases --remote`: nvm-style tag list (`*` = CURRENT;
+  remote marks latest). Offline `--remote` exits 2 with a mirror hint.
+- `cbeta use TAG --scope` / `use --default TAG` / `cbeta current`: build then
+  switch corpus CURRENT. Incomplete FETCHED refuses; `use latest` pins a
+  concrete lock tag; invalidates `last.json`.
+- `cbeta pull` reports newer releases; `pull --apply` fetches without switching
+  CURRENT.
+- Incremental `cbeta build --scope` with `{artifact}.tmp` + `PROGRESS.json`
+  resume; `--full` forces a clean rebuild; never publishes tmp as CURRENT.
+- `cbeta gc` / `prune` / `prune --dry-run` for unused corpus cache; never
+  deletes CURRENT.
+- `cbeta info` TTY extras (stale index / disk hint).
+- No-index and ghost-`get` human hints (stderr points at
+  `cbeta fetch --release 2026R2 --scope taisho`).
+- Dual-tier CLI contracts for the lifecycle surface, plus comprehensive
+  product-surface and perf/concurrency characterization harnesses.
+
+### Changed
+
+- First-run path is fetch-then-use. README / AGENTS / roadmap document v0.2 as
+  corpus lifecycle, with v0.1 P0–P2 already landed.
+
+### Not in 0.2.0
+
+Same planned surfaces as 0.1.0: `--window`, pager, JSONL-by-default piping,
+`fuzzy`, `semantic_search` (P3), and crates.io. Still Next: fetch
+`select_scope` parity, stronger `CBETA_GIT_BASE` recipes, optional stale
+fields on `info --json`.
 
 ## [0.1.0] - 2026-09-10
 
@@ -97,5 +140,6 @@ from GitHub Releases or `cargo install --locked --git` / `--path` (see
 README). `catalog --author` / `--title` need populated catalog.jsonl fields;
 the 2026R2 sidecar currently exports those as JSON null.
 
-[Unreleased]: https://github.com/wedreamer/cbeta-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wedreamer/cbeta-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wedreamer/cbeta-cli/releases/tag/v0.2.0
 [0.1.0]: https://github.com/wedreamer/cbeta-cli/releases/tag/v0.1.0
