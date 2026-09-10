@@ -60,17 +60,29 @@ fn run_get(cmd: &Command) -> i32 {
             0
         }
         Ok(None) => {
-            eprintln!("line_id not found: {line_id}");
+            ghost_not_found(line_id);
             1
         }
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             2
         }
         Err(e) => {
             eprintln!("{e}");
             2
         }
+    }
+}
+
+/// Ghost line_id: `当前 {tag} 无此行` (exit 1).
+fn ghost_not_found(line_id: &str) {
+    let tag = crate::cmd_catalog::load_info()
+        .map(|i| i.cbeta_tag)
+        .unwrap_or_default();
+    if tag.is_empty() {
+        eprintln!("当前 无此行 ({line_id})");
+    } else {
+        eprintln!("当前 {tag} 无此行");
     }
 }
 
@@ -109,7 +121,7 @@ fn run_read(cmd: &Command) -> i32 {
             0
         }
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             2
         }
         Err(e) => {
@@ -141,11 +153,11 @@ fn run_cite(cmd: &Command) -> i32 {
             0
         }
         Ok(None) => {
-            eprintln!("line_id not found: {line_id}");
+            ghost_not_found(line_id);
             1
         }
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             2
         }
         Err(e) => {
@@ -275,7 +287,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
 
         let mut get = cmd_get(Some("T30n1578_p0268b21"), Format::Json);
         assert_eq!(run(&get), 0);
@@ -328,7 +340,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
 
         let mut read = Command {
             action: Action::Read,
