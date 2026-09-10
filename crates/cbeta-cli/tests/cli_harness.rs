@@ -6,8 +6,8 @@
 mod common;
 
 use common::{
-    cbeta_full_enabled, lock_pins_for, mini_corpus, plant_mini_under_tag, skip_unless_cbeta_full,
-    temp_dir, write_complete_fetched_yaml,
+    cbeta_env, cbeta_env_with_home, cbeta_full_enabled, lock_pins_for, mini_corpus,
+    plant_mini_under_tag, skip_unless_cbeta_full, temp_dir, write_complete_fetched_yaml,
 };
 use std::fs;
 use std::sync::{Mutex, OnceLock};
@@ -125,4 +125,69 @@ fn plant_mini_under_tag_copies_xml_p5_layout() {
         !home.join(".cbeta").join("corpus").join("CURRENT").exists(),
         "plant must not write CURRENT"
     );
+}
+
+#[test]
+fn cbeta_env_with_home_sets_fake_home_not_real() {
+    // Given: fake HOME under temp + mini corpus/index
+    let home = temp_dir("home-iso");
+    let corpus = mini_corpus();
+    let index = temp_dir("home-iso-idx");
+    let real_home = std::env::var_os("HOME");
+    let real_last = real_home
+        .as_ref()
+        .map(|h| std::path::Path::new(h).join(".cbeta").join("last.json"));
+    let real_last_before = real_last
+        .as_ref()
+        .and_then(|p| fs::metadata(p).ok().map(|m| m.modified().ok()))
+        .flatten();
+
+    assert!(
+        home.starts_with(std::env::temp_dir()),
+        "fake HOME path prefix must be temp: {}",
+        home.display()
+    );
+    if let Some(rh) = real_home.as_ref() {
+        assert_ne!(
+            home.as_os_str(),
+            rh.as_os_str(),
+            "fake HOME must differ from real HOME"
+        );
+    }
+
+    // When: spawn with isolated HOME (info may exit 2 without built index)
+    let _out = cbeta_env_with_home(&corpus, &index, &home)
+        .args(["info"])
+        .output()
+        .unwrap_or_else(|e| panic!("spawn info: {e}"));
+
+    // Plant under fake home — paths stay under temp, not real $HOME
+    let planted = plant_mini_under_tag(&home, "2026R2");
+    assert!(
+        planted.starts_with(&home),
+        "planted tag_dir must stay under fake HOME"
+    );
+
+    // Then: real user home last.json mtime unchanged (helper must not touch it)
+    if let (Some(path), Some(before)) = (real_last.as_ref(), real_last_before) {
+        let after = fs::metadata(path).ok().and_then(|m| m.modified().ok());
+        assert_eq!(
+            after,
+            Some(before),
+            "must not mutate real $HOME/.cbeta/last.json"
+        );
+    }
+
+    // INDEX set → last.json under INDEX (session.rs); document only, no full save suite
+    assert!(
+        index.join("last.json").starts_with(&index),
+        "when CBETA_INDEX set, last.json path is under INDEX"
+    );
+
+    // cbeta_env still removes HOME
+    let out2 = cbeta_env(&corpus, &index)
+        .args(["--help"])
+        .output()
+        .unwrap_or_else(|e| panic!("spawn --help: {e}"));
+    assert_eq!(out2.status.code(), Some(0));
 }

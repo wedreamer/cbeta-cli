@@ -36,6 +36,8 @@ pub fn temp_dir(prefix: &str) -> PathBuf {
 }
 
 /// Spawn `cbeta` with CBETA_CORPUS / CBETA_INDEX isolated from the host home.
+///
+/// Removes `HOME` so lifecycle paths cannot touch the developer home by accident.
 pub fn cbeta_env(corpus: &Path, index: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cbeta"));
     cmd.env("CBETA_CORPUS", corpus);
@@ -43,6 +45,24 @@ pub fn cbeta_env(corpus: &Path, index: &Path) -> Command {
     // Avoid host color / locale surprises in assertions.
     cmd.env("NO_COLOR", "1");
     cmd.env_remove("HOME");
+    cmd
+}
+
+/// Like [`cbeta_env`], but sets a fake `HOME` (under `temp_dir`) for CURRENT/last.json tests.
+///
+/// Path contract (see `session.rs` `last_json_path`):
+/// - when `CBETA_INDEX` is set → `last.json` is `$CBETA_INDEX/last.json`
+/// - else → `$HOME/.cbeta/last.json` (beside `.cbeta`, not inside the index)
+pub fn cbeta_env_with_home(corpus: &Path, index: &Path, home: &Path) -> Command {
+    let cbeta_root = home.join(".cbeta");
+    if let Err(e) = fs::create_dir_all(&cbeta_root) {
+        panic!("create fake HOME .cbeta {}: {e}", cbeta_root.display());
+    }
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_cbeta"));
+    cmd.env("CBETA_CORPUS", corpus);
+    cmd.env("CBETA_INDEX", index);
+    cmd.env("NO_COLOR", "1");
+    cmd.env("HOME", home);
     cmd
 }
 
