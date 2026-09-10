@@ -158,6 +158,89 @@ fn catalog_type_lun_canon_t() {
 }
 
 #[test]
+fn catalog_work_t1578_exact_only() {
+    // Given: mini index (T0235 + T1578 only)
+    let (corpus, index) = built();
+    // When: exact work_id
+    let out = run(&corpus, &index, &["catalog", "--work", "T1578"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "catalog --work T1578; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("T1578"), "expected T1578; got:\n{stdout}");
+    assert!(
+        !stdout.contains("T0235"),
+        "T0235 must not appear under --work T1578; got:\n{stdout}"
+    );
+
+    // When: prefix that is not an exact work_id (must not fuzzy-match T1578)
+    let prefix = run(&corpus, &index, &["catalog", "--work", "T157"]);
+    assert_eq!(
+        prefix.status.code(),
+        Some(1),
+        "T157 must not fuzzy-match T1578; stdout={} stderr={}",
+        stdout_utf8(&prefix),
+        String::from_utf8_lossy(&prefix.stderr)
+    );
+    assert!(
+        !stdout_utf8(&prefix).contains("T1578"),
+        "prefix T157 must not list T1578; got:\n{}",
+        stdout_utf8(&prefix)
+    );
+}
+
+#[test]
+fn catalog_title_zhangzhen_substring() {
+    // Given: mini index; title filter is substring (not exact)
+    let (corpus, index) = built();
+    // When: scholar types a title fragment
+    let out = run(&corpus, &index, &["catalog", "--title", "掌珍"]);
+    let stdout = stdout_utf8(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "catalog --title 掌珍; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("T1578"),
+        "expected T1578 under --title 掌珍; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("大乘掌珍論"),
+        "expected 大乘掌珍論; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("T0235"),
+        "金剛經 must not match 掌珍; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn catalog_work_t1585_absent_on_mini() {
+    // Given: mini = T0235 + T1578 only (no T1585 rows)
+    let (corpus, index) = built();
+    // When: work_id not in mini catalog
+    let out = run(&corpus, &index, &["catalog", "--work", "T1585"]);
+    // Then: empty / exit 1 (do not invent T1585)
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "catalog --work T1585 on mini; stdout={} stderr={}",
+        stdout_utf8(&out),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !stdout_utf8(&out).contains("T1585"),
+        "must not invent T1585; got:\n{}",
+        stdout_utf8(&out)
+    );
+}
+
+#[test]
 fn info_prints_artifact() {
     // Given: mini index
     let (corpus, index) = built();
