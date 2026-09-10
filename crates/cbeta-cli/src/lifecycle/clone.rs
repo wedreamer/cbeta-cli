@@ -175,8 +175,47 @@ mod tests {
         let dest = root.join("xml");
         clone_at_sha(&dest, &url, &sha, false).unwrap();
         assert_eq!(rev_parse_head(&dest).unwrap(), sha);
-        // resume path
         clone_at_sha(&dest, &url, &sha, false).unwrap();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clone_at_sha_discards_non_git_debris() {
+        let root = temp_dir("cbeta-clone-debris");
+        let (bare, sha) = make_bare_with_commit(&root);
+        let url = format!("file://{}", bare.display());
+        let dest = root.join("xml");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("junk.txt"), "not a git repo\n").unwrap();
+        clone_at_sha(&dest, &url, &sha, false).unwrap();
+        assert_eq!(rev_parse_head(&dest).unwrap(), sha);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clone_at_sha_sparse_against_local() {
+        let root = temp_dir("cbeta-clone-sparse");
+        let (bare, sha) = make_bare_with_commit(&root);
+        let url = format!("file://{}", bare.display());
+        let dest = root.join("xml-sparse");
+        clone_at_sha(&dest, &url, &sha, true).unwrap();
+        assert_eq!(rev_parse_head(&dest).unwrap(), sha);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clone_at_sha_discards_broken_worktree_and_reclones() {
+        let root = temp_dir("cbeta-clone-resume-fail");
+        let (bare, sha) = make_bare_with_commit(&root);
+        let url = format!("file://{}", bare.display());
+        let dest = root.join("xml");
+        fs::create_dir_all(&dest).unwrap();
+        git_ok(&["init"], &dest);
+        fs::write(dest.join("README.md"), "stale\n").unwrap();
+        git_ok(&["add", "README.md"], &dest);
+        git_ok(&["commit", "-m", "stale"], &dest);
+        clone_at_sha(&dest, &url, &sha, false).unwrap();
+        assert_eq!(rev_parse_head(&dest).unwrap(), sha);
         let _ = fs::remove_dir_all(&root);
     }
 }
