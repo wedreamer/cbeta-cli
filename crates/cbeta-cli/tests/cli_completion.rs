@@ -40,8 +40,27 @@ fn completion_bash_prints_search_and_flags() {
         Some(0),
         "completion bash exit 0; stdout={stdout} stderr={stderr}"
     );
+    // SOURCE-EMITTED presence lock: every unhidden clap Cmds variant must appear
+    // as a completion word (cli_args.rs Cmds — never hide=true).
     for sub in [
-        "search", "verify", "get", "catalog", "info", "build", "serve",
+        "search",
+        "verify",
+        "get",
+        "read",
+        "cite",
+        "catalog",
+        "info",
+        "build",
+        "bench",
+        "serve",
+        "completion",
+        "fetch",
+        "releases",
+        "use",
+        "current",
+        "pull",
+        "gc",
+        "prune",
     ] {
         assert!(
             stdout.contains(sub),
