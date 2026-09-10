@@ -193,4 +193,48 @@ ffffffffffffffffffffffffffffffffffffffff\trefs/tags/2026R1
         );
         assert_eq!(tags.len(), 2);
     }
+
+    #[test]
+    fn rewrite_url_leaves_non_github_unchanged() {
+        let _g = env_lock();
+        std::env::set_var("CBETA_GIT_BASE", "https://mirror.example/github.com");
+        let other = "https://git.example.org/cbeta/xml-p5.git";
+        assert_eq!(rewrite_url(other), other);
+        std::env::remove_var("CBETA_GIT_BASE");
+    }
+
+    #[test]
+    fn parse_ls_remote_empty_and_partial_lines() {
+        let tags = parse_ls_remote("\n\nonlysha\n  \nshaonly\t\n");
+        assert!(tags.is_empty());
+        let tags2 = parse_ls_remote("deadbeef refs/tags/2026R2\n");
+        assert_eq!(tags2.get("2026R2").map(String::as_str), Some("deadbeef"));
+    }
+
+    #[test]
+    fn is_git_worktree_false_on_empty_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-not-git-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!is_git_worktree(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_git_unknown_command_errs() {
+        let err = run_git(&["this-is-not-a-git-subcommand-xyz"], None).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn git_available_true_in_ci() {
+        assert!(git_available(), "git must exist on PATH in CI/dev");
+    }
 }
