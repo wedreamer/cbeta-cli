@@ -128,4 +128,90 @@ mod tests {
         std::env::remove_var("HOME");
         let _ = fs::remove_dir_all(&base);
     }
+
+    #[test]
+    fn write_corpus_current_roundtrip() {
+        let _g = env_lock();
+        let base = std::env::temp_dir().join(format!(
+            "cbeta-write-cur-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join(".cbeta").join("corpus")).unwrap();
+        std::env::set_var("HOME", &base);
+        write_corpus_current("2026R2").unwrap();
+        assert_eq!(current_tag().unwrap(), "2026R2");
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_corpus_default_writes_file() {
+        let _g = env_lock();
+        let base = std::env::temp_dir().join(format!(
+            "cbeta-write-def-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join(".cbeta").join("corpus")).unwrap();
+        std::env::set_var("HOME", &base);
+        write_corpus_default("2026R2").unwrap();
+        let raw = fs::read_to_string(base.join(".cbeta/corpus/DEFAULT")).unwrap();
+        assert_eq!(raw.trim(), "2026R2");
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn write_corpus_current_removes_leftover_tmp() {
+        let _g = env_lock();
+        let base = std::env::temp_dir().join(format!(
+            "cbeta-cur-tmp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let cache = base.join(".cbeta").join("corpus");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("CURRENT.tmp"), "stale\n").unwrap();
+        std::env::set_var("HOME", &base);
+        write_corpus_current("2025R3").unwrap();
+        assert!(!cache.join("CURRENT.tmp").exists());
+        assert_eq!(current_tag().unwrap(), "2025R3");
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn empty_current_file_errors_with_fetch_hint() {
+        let _g = env_lock();
+        let base = std::env::temp_dir().join(format!(
+            "cbeta-empty-cur-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let cache = base.join(".cbeta").join("corpus");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("CURRENT"), "\n").unwrap();
+        std::env::set_var("HOME", &base);
+        let err = current_tag().unwrap_err();
+        assert!(err.contains(FETCH_HINT), "err={err}");
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&base);
+    }
 }
