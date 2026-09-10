@@ -115,4 +115,84 @@ mod tests {
         let lines = vec![line("T08n0235_p0001a01", "T0235")];
         assert!(check_golden(&lines, &[]).is_ok());
     }
+
+    #[test]
+    fn verify_lock_skips_when_no_fetched() {
+        let _g = crate::env_paths::env_lock();
+        let home = std::env::temp_dir().join(format!(
+            "cbeta-golden-nofetched-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".cbeta/corpus")).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("CBETA_CORPUS");
+        assert!(verify_lock("2026R2").is_ok());
+        std::env::remove_var("HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn verify_lock_ok_when_fetched_matches_pins() {
+        let _g = crate::env_paths::env_lock();
+        let home = std::env::temp_dir().join(format!(
+            "cbeta-golden-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".cbeta/corpus")).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("CBETA_CORPUS");
+        let lock = load_lock().unwrap();
+        let pins = lock.releases.get("2026R2").unwrap();
+        let dest = home.join(".cbeta/corpus/2026R2");
+        crate::lifecycle::fetched::write_fetched("2026R2", &dest, pins).unwrap();
+        assert!(verify_lock("2026R2").is_ok());
+        std::env::remove_var("HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn verify_lock_err_when_incomplete_or_unknown_tag() {
+        let _g = crate::env_paths::env_lock();
+        let home = std::env::temp_dir().join(format!(
+            "cbeta-golden-bad-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".cbeta/corpus")).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("CBETA_CORPUS");
+        let lock = load_lock().unwrap();
+        let mut pins = lock.releases.get("2026R2").unwrap().clone();
+        pins.xml_p5 = "0".repeat(40);
+        let dest = home.join(".cbeta/corpus/2026R2");
+        crate::lifecycle::fetched::write_fetched("2026R2", &dest, &pins).unwrap();
+        let err = verify_lock("2026R2").unwrap_err();
+        assert!(
+            err.contains("incomplete") || err.contains("mismatch") || err.contains("pin"),
+            "err={err}"
+        );
+        let ghost = home.join(".cbeta/corpus/2099R9");
+        crate::lifecycle::fetched::write_fetched("2099R9", &ghost, &pins).unwrap();
+        let err2 = verify_lock("2099R9").unwrap_err();
+        assert!(
+            err2.contains("no lock") || err2.contains("2099"),
+            "err={err2}"
+        );
+        std::env::remove_var("HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }
