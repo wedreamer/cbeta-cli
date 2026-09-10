@@ -23,13 +23,15 @@ CBReader default proximity is 30 characters; agents should pass `distance` expli
 | `near` | A within N chars of B, order ignored |
 | `before` | A then B within N chars, order required |
 | `boolean` | AND / OR / NOT of terms, phrases, or near-clauses |
-| `fuzzy` | 1–2 char typo / 异体 after n-gram recall |
-| `wildcard` | unknown single char `?`, max 2 wildcards |
+| `fuzzy` | **planned** — 1–2 char typo / 异体 after n-gram recall (no engine path today) |
+| `wildcard` | unknown single char `?`, max 2 per term (shipped; 2026R2 `莲?色` hits 青蓮色/紅蓮色) |
 | `dsl` | power-user string: CBReader `+ * & , - ?` or `NEAR/16` |
 
 Do not ship regex-over-corpus in v1. Semantic search is a later extra tool, never mixed into verify.
 
-## Structured near (future agent API; today `Command` carries only the string `q` parsed by `parse_query`)
+## Structured near (MCP `clauses` landed; richer shape still planned)
+
+MCP `cbeta_search` accepts `clauses: Vec<String>` (plus `mode`) and maps them to `ParsedQuery` (default near/30; `before` → ordered/30; `keyword`/`phrase` pass through). Today clauses are plain strings: the per-clause object shape below (`within_chars`, `ordered`) is **planned**. There is still **no `Command.clauses` type and no `--clauses` CLI flag**, and no `--window` / `--limit` on the clap surface; the CLI keeps the string `q` through `parse_query`.
 
 ```json
 {
@@ -44,7 +46,7 @@ Do not ship regex-over-corpus in v1. Semantic search is a later extra tool, neve
 }
 ```
 
-`filters.types` matches the current `Filters.types` field name. `window`: `paragraph` (default, agent-friendly) | `gatha` | `juan` (CBReader-compatible, coarser). None of `clauses` / `window` / `limit` exist on `Command` today.
+`filters.types` matches the current `Filters.types` field name. `window`: `paragraph` (default, agent-friendly) | `gatha` | `juan` (CBReader-compatible, coarser). `window` / `limit` do not exist on `Command` or any transport yet; per-clause `within_chars` / `ordered` are planned (MCP `clauses` is `Vec<String>` today).
 
 ## String DSL (humans + CBReader aliases)
 
@@ -80,6 +82,6 @@ Implementation:
 
 ## Golden proximity cases
 
-- `真如 NEAR/16 缘起` inside 瑜伽/唯识部类
-- `莲?色` → 莲華色 and 莲花色
+- `真如 NEAR/16 缘起` inside 瑜伽/唯识部类 (2-gram recall + char-span confirm, shipped)
+- `莲?色` → 青蓮色 / 紅蓮色 on 2026R2 (single-char `?` wildcard, shipped)
 - user verse via `verify`, not `near`
