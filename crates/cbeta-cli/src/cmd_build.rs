@@ -1,5 +1,6 @@
-//! `cbeta build --scope`: parse TEI + write Tantivy artifact.
+//! `cbeta build --scope`: parse TEI + write Tantivy artifact (incr + resume).
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -7,26 +8,19 @@ use std::path::{Path, PathBuf};
 use cbeta_core::{Command, Format, IndexInfo};
 use cbeta_index::{
     artifact_dir_name, artifact_id, publish_dir, require_path_segment, resolve_publish_dest,
-    stage_tmp_dir, write_current_pointer, write_tantivy_dir, IndexableLine,
+    stage_tmp_dir, tmp_dir_for, write_current_pointer, write_tantivy_dir,
 };
-use cbeta_parse::{parse_tei_lines, GaijiMap};
+use cbeta_parse::GaijiMap;
 
-use crate::citation::format_citation;
+use crate::build_assemble::{assemble_lines, AssembleInput, SKIP_CANONS};
+use crate::build_golden::{check_golden, verify_lock};
+use crate::build_incr::{write_parsed_jsonl, write_works_sidecar};
+use crate::build_progress::{decide_tmp, progress_path, TmpDecision};
 use crate::env_paths::{corpus_root, index_root, xml_p5_root};
 use crate::scope_io::{read_catalog, read_files_list, read_json, CatalogRow, ScopeManifest};
 
-/// Canons never indexed by default (Category B).
-const SKIP_CANONS: &[&str] = &["Y", "TX", "LC", "YP"];
-
-fn rel_is_under(rel: &str) -> bool {
-    let p = Path::new(rel);
-    !p.is_absolute()
-        && p.components()
-            .all(|c| matches!(c, std::path::Component::Normal(_)))
-}
-
 /// Run build; returns process exit code (0 ok, 2 usage/missing corpus).
-pub fn run(cmd: &Command) -> i32 {
+pub fn run(cmd: &Command, full: bool) -> i32 {
     let scope = match cmd.q.as_deref() {
         Some(s) if !s.is_empty() => s,
         _ => {
@@ -34,11 +28,10 @@ pub fn run(cmd: &Command) -> i32 {
             return 2;
         }
     };
-
-    match build_scope(scope) {
+    let tty = cmd.format != Format::Json;
+    match build_scope(scope, full, tty) {
         Ok(info) => {
             if cmd.format == Format::Json {
-                // IndexInfo is our Serialize type; pretty-print cannot fail on it.
                 #[allow(clippy::expect_used)]
                 {
                     println!(
@@ -61,7 +54,17 @@ pub fn run(cmd: &Command) -> i32 {
     }
 }
 
-fn build_scope(scope: &str) -> Result<IndexInfo, String> {
+/// Build one scope; `full` forces wipe + reparse all works.
+///
+/// # Errors
+/// Missing corpus/scope, parse failure, golden/lock gate, publish failure.
+pub(crate) fn build_scope_with_full(scope: &str, full: bool) -> Result<IndexInfo, String> {
+    build_scope(scope, full, true)
+}
+
+fn build_scope(scope: &str, full: bool, tty_progress: bool) -> Result<IndexInfo, String> {
+    let _lock_guard = crate::lifecycle::flock::try_acquire()?;
+
     let corpus = corpus_root()?;
     if !corpus.is_dir() {
         return Err(format!(
@@ -96,7 +99,7 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         }
     }
 
-    let by_path: std::collections::HashMap<&str, &CatalogRow> =
+    let by_path: HashMap<&str, &CatalogRow> =
         catalog.iter().map(|r| (r.path.as_str(), r)).collect();
 
     let xml_root = xml_p5_root(&corpus);
@@ -107,68 +110,59 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
             corpus.display()
         ));
     }
-    let gaiji = GaijiMap::default();
-    let mut lines: Vec<IndexableLine> = Vec::new();
-    let mut works_seen = 0_u64;
-
-    let total = files.len();
-    for (i, rel) in files.iter().enumerate() {
-        // Per-file progress so large canons (e.g. taisho) are not silent for minutes.
-        eprintln!("[{}/{}] {rel}", i + 1, total);
-        let Some(row) = by_path.get(rel.as_str()).copied() else {
-            eprintln!("warn: no catalog row for {rel}; skipping");
-            continue;
-        };
-        if skip.iter().any(|c| c == &row.canon) {
-            continue;
-        }
-        if !rel_is_under(rel) {
-            return Err(format!("files.txt path escapes xml-p5: {rel}"));
-        }
-        let xml_path = xml_root.join(rel);
-        let xml = fs::read_to_string(&xml_path)
-            .map_err(|e| format!("read {}: {e}", xml_path.display()))?;
-        let parsed =
-            parse_tei_lines(&xml).map_err(|e| format!("parse {}: {e}", xml_path.display()))?;
-        works_seen += 1;
-        for pl in parsed {
-            let citation = format_citation(&manifest.cbeta_tag, &pl);
-            lines.push(IndexableLine {
-                line: pl,
-                title: row.title.clone(),
-                author: row.author.clone(),
-                citation,
-                cbeta_tag: manifest.cbeta_tag.clone(),
-            });
-        }
-    }
 
     let root = index_root()?;
-    fs::create_dir_all(&root).map_err(|e| format!("create index root: {e}"))?;
+    fs::create_dir_all(&root).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            format!("无权限创建索引目录 {}: {e}", root.display())
+        } else {
+            format!("create index root: {e}")
+        }
+    })?;
+    crate::lifecycle::flock::ensure_parent_writable(&root.join(".probe"))?;
 
     let art_name =
         artifact_dir_name(&manifest.cbeta_tag, &manifest.scope_hash).map_err(|e| e.to_string())?;
     let intended = root.join(&art_name);
+    let tmp_path = tmp_dir_for(&intended);
 
-    // Stage into tmp; never remove_dir_all the live artifact.
-    let tmp = stage_tmp_dir(&intended).map_err(|e| format!("stage tmp: {e}"))?;
-    if let Err(e) = write_tantivy_dir(&tmp, &lines, &gaiji) {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(format!("write index: {e}"));
-    }
-
-    let dest = match resolve_publish_dest(&intended) {
-        Ok(d) => d,
-        Err(e) => {
-            let _ = fs::remove_dir_all(&tmp);
-            return Err(format!("resolve publish dest: {e}"));
+    let decision = decide_tmp(&tmp_path, &manifest.cbeta_tag, &manifest.scope_hash, full);
+    let (tmp, resume_after) = match decision {
+        TmpDecision::Reuse { progress } => (tmp_path, Some(progress.work_id)),
+        TmpDecision::Wipe => {
+            let t = stage_tmp_dir(&intended).map_err(|e| format!("stage tmp: {e}"))?;
+            (t, None)
         }
     };
+
+    let assembled = assemble_lines(&AssembleInput {
+        files: &files,
+        by_path: &by_path,
+        skip: &skip,
+        xml_root: &xml_root,
+        tmp: &tmp,
+        intended: &intended,
+        resume_after: resume_after.as_deref(),
+        full,
+        cbeta_tag: &manifest.cbeta_tag,
+        scope_hash: &manifest.scope_hash,
+        tty_progress,
+    })?;
+
+    check_golden(&assembled.lines, &catalog)?;
+    if std::env::var_os("CBETA_CORPUS").is_none() {
+        verify_lock(&manifest.cbeta_tag)?;
+    }
+
+    let gaiji = GaijiMap::default();
+    write_tantivy_dir(&tmp, &assembled.lines, &gaiji).map_err(|e| format!("write index: {e}"))?;
+
+    let dest = resolve_publish_dest(&intended).map_err(|e| format!("resolve publish dest: {e}"))?;
 
     let work_count = if manifest.work_count > 0 {
         manifest.work_count
     } else {
-        works_seen
+        assembled.works.len() as u64
     };
 
     let info = IndexInfo {
@@ -179,16 +173,12 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         index_path: dest.display().to_string(),
     };
 
-    // Sidecars must exist inside the tree at the moment it becomes visible.
-    if let Err(e) = write_sidecar(&tmp, &info, &manifest, &catalog, &catalog_path) {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(e);
-    }
+    write_sidecar(&tmp, &info, &manifest, &catalog, &catalog_path)?;
+    write_works_sidecar(&tmp, &assembled.works)?;
+    write_parsed_jsonl(&tmp, &assembled.lines)?;
+    let _ = fs::remove_file(progress_path(&tmp));
 
-    if let Err(e) = publish_dir(&tmp, &dest) {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(format!("publish artifact: {e}"));
-    }
+    publish_dir(&tmp, &dest).map_err(|e| format!("publish artifact: {e}"))?;
 
     let dest_basename = dest
         .file_name()
@@ -196,11 +186,14 @@ fn build_scope(scope: &str) -> Result<IndexInfo, String> {
         .ok_or_else(|| format!("bad dest basename: {}", dest.display()))?;
     write_current_pointer(&root, dest_basename).map_err(|e| format!("write CURRENT: {e}"))?;
 
-    eprintln!(
-        "indexed {works_seen} works, {} lines → {}",
-        lines.len(),
-        dest.display()
-    );
+    if tty_progress {
+        eprintln!(
+            "indexed {} works, {} lines → {}",
+            assembled.works_seen,
+            assembled.lines.len(),
+            dest.display()
+        );
+    }
 
     Ok(info)
 }
@@ -291,12 +284,12 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 2);
+        assert_eq!(run(&cmd, false), 2);
         let cmd2 = Command {
             q: Some(String::new()),
             ..cmd
         };
-        assert_eq!(run(&cmd2), 2);
+        assert_eq!(run(&cmd2, false), 2);
     }
 
     #[test]
@@ -304,7 +297,6 @@ mod tests {
         let _g = env_lock();
         let index = temp_dir("idx");
         let missing = temp_dir("no-corpus");
-        // empty dir is not a valid corpus (no scopes)
         std::env::set_var("CBETA_CORPUS", &missing);
         std::env::set_var("CBETA_INDEX", &index);
         let cmd = Command {
@@ -317,16 +309,11 @@ mod tests {
             context: None,
             copy: false,
         };
-        // missing is a dir but no MANIFEST → scope not found after corpus check
-        // corpus_root ok if dir exists; build_scope checks is_dir then MANIFEST
-        assert_eq!(run(&cmd), 2);
-
-        // non-dir corpus
+        assert_eq!(run(&cmd, false), 2);
         let file_corpus = temp_dir("file-corp").join("not-a-dir");
         fs::write(&file_corpus, "x").unwrap();
         std::env::set_var("CBETA_CORPUS", &file_corpus);
-        assert_eq!(run(&cmd), 2);
-
+        assert_eq!(run(&cmd, false), 2);
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&index);
@@ -351,7 +338,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 2);
+        assert_eq!(run(&cmd, false), 2);
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&corpus);
@@ -375,12 +362,12 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 0);
+        assert_eq!(run(&cmd, false), 0);
         assert!(index.join("2026R2-c1f1x7a0").is_dir());
-        // rebuild keeps previous artifact; CURRENT swings to a complete package
+        assert!(index.join("2026R2-c1f1x7a0").join("works.json").is_file());
         cmd.format = Format::Plain;
-        assert_eq!(run(&cmd), 0);
-        assert!(index.join("2026R2-c1f1x7a0").is_dir());
+        assert_eq!(run(&cmd, false), 0);
+        assert_eq!(run(&cmd, true), 0);
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&index);
@@ -392,7 +379,6 @@ mod tests {
         let corpus = temp_dir("corp-skip");
         copy_tree(&mini_corpus().join("scopes"), &corpus.join("scopes"));
         copy_tree(&mini_corpus().join("xml-p5"), &corpus.join("xml-p5"));
-        // append unknown path + a Y-canon row that should be skipped if listed
         let files = corpus.join("scopes/ci-minimal/files.txt");
         let mut body = fs::read_to_string(&files).unwrap();
         body.push_str("T/missing/nope.xml\n");
@@ -410,7 +396,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(run(&cmd), 0);
+        assert_eq!(run(&cmd, false), 0);
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&corpus);
@@ -436,10 +422,8 @@ mod tests {
             work_count: 0,
             exclude_canons: vec![],
         };
-        // MANIFEST must exist next to missing catalog_src parent path — use art as fake parent
-        let man_path = art.join("MANIFEST.json");
         fs::write(
-            &man_path,
+            art.join("MANIFEST.json"),
             r#"{"cbeta_tag":"2026R2","scope":"s","scope_hash":"h"}"#,
         )
         .unwrap();
@@ -453,7 +437,6 @@ mod tests {
             category: String::new(),
             work_type: String::new(),
         }];
-        // catalog_src parent = art, so MANIFEST copy works; catalog_src itself missing → write rows
         let missing_cat = art.join("no-catalog.jsonl");
         write_sidecar(&art, &info, &manifest, &catalog, &missing_cat).unwrap();
         assert!(art.join("cbeta-meta.json").is_file());
