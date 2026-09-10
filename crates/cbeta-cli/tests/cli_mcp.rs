@@ -308,6 +308,84 @@ fn verify_quote_json() {
     );
 }
 
+#[test]
+fn list_catalog_mini_t1578() {
+    // Given: mini index + stdio MCP (catalog is corpus-side, same five-tool surface)
+    let corpus = mini_corpus();
+    let index = temp_dir("mcp-catalog");
+    build_mini(&corpus, &index);
+    let mut mcp = McpChild::spawn(&corpus, &index);
+    mcp.initialize();
+
+    // When: tools/call cbeta_list_catalog (no filters → full mini catalog)
+    let body = mcp.call_tool(40, "cbeta_list_catalog", json!({}));
+
+    // Then: JSON array includes mini T1578 (not T1585 — mini is T0235+T1578 only)
+    let entries = body
+        .as_array()
+        .unwrap_or_else(|| panic!("catalog expected array: {body}"));
+    assert!(
+        entries.iter().any(|e| {
+            e["work_id"].as_str() == Some("T1578")
+                || e.get("work_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.contains("T1578"))
+                    .unwrap_or(false)
+                || format!("{e}").contains("T1578")
+        }),
+        "expected T1578 in catalog; body={body}"
+    );
+}
+
+#[test]
+fn index_info_artifact_metadata() {
+    // Given: mini index built under isolated CBETA_INDEX
+    let corpus = mini_corpus();
+    let index = temp_dir("mcp-info");
+    build_mini(&corpus, &index);
+    let mut mcp = McpChild::spawn(&corpus, &index);
+    mcp.initialize();
+
+    // When: tools/call cbeta_index_info
+    let body = mcp.call_tool(50, "cbeta_index_info", json!({}));
+
+    // Then: artifact metadata present (tag and/or artifact_id; work_count optional)
+    let has_tag = body.get("cbeta_tag").and_then(|v| v.as_str()).is_some();
+    let has_artifact = body
+        .get("artifact_id")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    assert!(
+        has_tag || has_artifact,
+        "info missing cbeta_tag/artifact_id: {body}"
+    );
+}
+
+#[test]
+fn cli_search_clauses_flag_rejected() {
+    // Given: CLI has no --clauses (MCP-only SearchArgs.clauses); clap must reject
+    let corpus = mini_corpus();
+    let index = temp_dir("mcp-clauses-cli");
+    // When: cbeta search --clauses foo (do not invent the flag on product)
+    let out = cbeta_env(&corpus, &index)
+        .args(["search", "--clauses", "foo"])
+        .output()
+        .expect("run cbeta search --clauses");
+    // Then: usage exit 2 (unknown argument), not a silent accept
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "expected clap reject --clauses exit 2; stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("clauses") || err.contains("unexpected") || err.contains("unrecognized"),
+        "stderr should mention unknown --clauses; stderr={err}"
+    );
+}
+
 // Silence unused import warning if Command is only used via cbeta_env path.
 #[allow(dead_code)]
 fn _bin() -> Command {
