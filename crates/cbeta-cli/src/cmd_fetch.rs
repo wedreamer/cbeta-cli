@@ -397,53 +397,68 @@ exit 1
         let _ = fs::remove_dir_all(&home);
     }
 
-    fn make_bare(root: &Path, name: &str) -> (PathBuf, String) {
+    fn git_cmd(args: &[&str], cwd: &Path) -> std::process::Output {
         use std::process::Command;
+        Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "commit.gpgsign")
+            .env("GIT_CONFIG_VALUE_0", "false")
+            .output()
+            .unwrap()
+    }
+
+    fn make_bare(root: &Path, name: &str) -> (PathBuf, String) {
         let work = root.join(format!("{name}-seed"));
         let bare = root.join(format!("{name}.git"));
         fs::create_dir_all(&work).unwrap();
         let git = |args: &[&str], cwd: &Path| {
-            assert!(Command::new("git")
-                .args(args)
-                .current_dir(cwd)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .status()
-                .unwrap()
-                .success());
+            let out = git_cmd(args, cwd);
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         };
-        git(&["init"], &work);
+        git(&["init", "-b", "master"], &work);
         fs::write(work.join("README.md"), format!("{name}\n")).unwrap();
         git(&["add", "README.md"], &work);
         git(&["commit", "-m", "init"], &work);
-        let sha = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(&work)
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap()
-        .trim()
-        .to_string();
-        assert!(Command::new("git")
-            .args([
+        let parsed = git_cmd(&["rev-parse", "HEAD"], &work);
+        assert!(
+            parsed.status.success(),
+            "rev-parse HEAD failed for {name}: {}",
+            String::from_utf8_lossy(&parsed.stderr)
+        );
+        let sha = String::from_utf8(parsed.stdout).unwrap().trim().to_string();
+        assert_eq!(sha.len(), 40, "empty/short HEAD for {name}: {sha:?}");
+        let clone = git_cmd(
+            &[
                 "clone",
                 "--bare",
                 work.to_str().unwrap(),
-                bare.to_str().unwrap()
-            ])
-            .status()
-            .unwrap()
-            .success());
+                bare.to_str().unwrap(),
+            ],
+            root,
+        );
+        assert!(
+            clone.status.success(),
+            "bare clone {name} failed: {}",
+            String::from_utf8_lossy(&clone.stderr)
+        );
         (bare, sha)
     }
 
     #[test]
     fn clone_three_local_file_urls_ok() {
+        let _g = env_lock();
         let root = temp_home("clone3");
         let (xml_bare, xml_sha) = make_bare(&root, "xml");
         let (meta_bare, meta_sha) = make_bare(&root, "meta");
