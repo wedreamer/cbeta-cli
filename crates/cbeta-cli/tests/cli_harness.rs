@@ -96,6 +96,15 @@ fn write_complete_fetched_yaml_never_latest_and_matches_pins() {
         "metadata commit missing: {raw}"
     );
     assert!(raw.contains(&pins.gaiji), "gaiji commit missing: {raw}");
+    // Prove YAML indent survived (Rust `\n\` line-continuation eats leading spaces).
+    assert!(
+        raw.contains("\n  xml-p5:"),
+        "sources.xml-p5 must be two-space indented: {raw}"
+    );
+    assert!(
+        raw.contains("\n    commit:"),
+        "source commit keys must be four-space indented: {raw}"
+    );
 
     let mini_fetched = mini_corpus().join("FETCHED.yaml");
     let mini_raw =

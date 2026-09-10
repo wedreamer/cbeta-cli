@@ -136,26 +136,23 @@ pub fn write_complete_fetched_yaml(tag_dir: &Path, tag: &str, pins: &LockPins) {
     fs::create_dir_all(tag_dir).unwrap_or_else(|e| {
         panic!("mkdir {}: {e}", tag_dir.display());
     });
-    // Match crates/cbeta-cli/src/lifecycle/fetched.rs FetchedYaml field names exactly.
-    let yaml = format!(
-        "schema: cbeta-cli.fetched/v1\n\
-         cbeta_release: {tag}\n\
-         fetched_at: 1970-01-01T00:00:00Z\n\
-         cache_root: {cache}\n\
-         sources:\n\
-           xml-p5:\n\
-             tag: {tag}\n\
-             commit: {xml}\n\
-           metadata:\n\
-             commit: {meta}\n\
-           gaiji:\n\
-             commit: {gaiji}\n",
-        tag = tag,
-        cache = tag_dir.display(),
-        xml = pins.xml_p5,
-        meta = pins.metadata,
-        gaiji = pins.gaiji,
-    );
+    // join("\n") keeps two-/four-space YAML indent; format! "\n\" continuation strips it.
+    let yaml = [
+        "schema: cbeta-cli.fetched/v1".to_string(),
+        format!("cbeta_release: {tag}"),
+        "fetched_at: 1970-01-01T00:00:00Z".to_string(),
+        format!("cache_root: {}", tag_dir.display()),
+        "sources:".to_string(),
+        "  xml-p5:".to_string(),
+        format!("    tag: {tag}"),
+        format!("    commit: {}", pins.xml_p5),
+        "  metadata:".to_string(),
+        format!("    commit: {}", pins.metadata),
+        "  gaiji:".to_string(),
+        format!("    commit: {}", pins.gaiji),
+        String::new(),
+    ]
+    .join("\n");
     let path = tag_dir.join("FETCHED.yaml");
     fs::write(&path, yaml).unwrap_or_else(|e| {
         panic!("write {}: {e}", path.display());
