@@ -18,7 +18,7 @@ cbeta-cli/
 ├── Cargo.toml              # workspace; clap pinned =4.5.23
 ├── crates/cbeta-core/      # Command / Hit / VerifyReport / Filters / parse_query
 ├── crates/cbeta-parse/     # TEI P5 + 繁简/异体/缺字/去标点
-├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/
+├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/index
 ├── crates/cbeta-search/    # keyword/phrase + near/before (2-gram recall; span.rs confirm_span; cli_near.rs CLI handler) + verify
 ├── crates/cbeta-cli/       # bin name `cbeta`; clap → Command; tests/ = CLI contracts
 └── docs/                   # search-modes.md, human-ux.md, roadmap.md
