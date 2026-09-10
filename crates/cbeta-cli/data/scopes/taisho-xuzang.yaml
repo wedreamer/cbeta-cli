@@ -1,0 +1,5 @@
+name: taisho-xuzang
+description: 大正藏 T + 新纂卍续藏 X
+canons: [T, X]
+license: cc-by-nc-sa
+exclude_canons: [Y, TX, LC, YP]

@@ -1,0 +1,6 @@
+name: ci-minimal
+description: Tiny fixture set for parser and golden tests
+canons: [T]
+works: [T0235, T0945, T1578, T1585]
+license: cc-by-nc-sa
+exclude_canons: [Y, TX, LC, YP]

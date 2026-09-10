@@ -1,0 +1,5 @@
+name: cc-open
+description: All CC BY-NC-SA canons; exclude Category B
+canons: [T, X, A, K, S, F, C, U, P, J, L, G, M, D, N, ZS, I, ZW, B, GA, GB, CC]
+license: cc-by-nc-sa
+exclude_canons: [Y, TX, LC, YP]
