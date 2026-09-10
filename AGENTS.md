@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **v0.1.0 = P0 + P1 + P2 landed (2026-09).** P0: `build` (atomic tmp+rename swap), keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. P1: `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`; hash(norm) exact + n-gram/alignment similar; exit 0 even when not original); `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard); near/before with char-span confirm; `--explain` / `--script s|t`; stdio MCP (five tools). P2: `serve --http ADDR` (else stdio), bare `cbeta` REPL, `--save last` / `--from last` / `--index N`, `completion <shell>`, `bench --scope`. `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). `--explain --json` dumps **Command/parsed_query** (intentional parse dump, not hits). See `cli_mcp`.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **v0.1.0 = P0 + P1 + P2.** **v0.2 = corpus lifecycle (fetch/releases/use/pull/gc/prune, incremental build).** P0: `build` (atomic tmp+rename swap), keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. P1: `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`; hash(norm) exact + n-gram/alignment similar; exit 0 even when not original); `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard); near/before with char-span confirm; `--explain` / `--script s|t`; stdio MCP (five tools). P2: `serve --http ADDR` (else stdio), bare `cbeta` REPL, `--save last` / `--from last` / `--index N`, `completion <shell>`, `bench --scope`. v0.2: `cbeta fetch --release 2026R2 --scope taisho` is the first path (never vendor xml-p5); fetch does **not** auto-use; `use` switches CURRENT only after a complete artifact; `pull` reports (`--apply` fetches, still no CURRENT switch); `gc`/`prune` never delete CURRENT. `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). `--explain --json` dumps **Command/parsed_query** (intentional parse dump, not hits). See `cli_mcp`.
 
 Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` must match **current runtime**; this v0.1 close-out corrected the stale "not implemented" claims. Humans own README recipes.
 
@@ -91,7 +91,15 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 ## CLI SURFACE (today)
 
 - Global flags (clap, `global = true`): `--json` `--mode` `--explain` `--plain` `--canon` `--author` `--type` `--work` `--title` `--script s|t` `--save` `--from` `--index N` `--copy`.
-- clap subcommands: Search, Verify, Get, Read, Cite, Catalog, Info, Build, Bench, Serve, Completion.
+- clap subcommands: Search, Verify, Get, Read, Cite, Catalog, Info, Build, Bench, Serve, Completion, Fetch, Releases, Use, Current, Pull, Gc, Prune.
+- Lifecycle cmds are **CLI-only** (like Bench/Completion). MCP stays five tools. No 7th search tool.
+- First-run / no-index / no CURRENT: search exit 2, stderr points to `cbeta fetch --release 2026R2 --scope taisho`. `CBETA_GIT_BASE` rewrites `https://github.com` (no hardcoded ghproxy).
+- `fetch --release TAG|latest --scope`: clone pinned xml-p5/metadata/gaiji; `FETCHED.yaml` stores a **concrete** tag; never writes CURRENT; never auto-use.
+- `releases` / `releases --remote`: nvm-style; `*` = CURRENT; remote marks latest. Offline `--remote` exit 2 + mirror hint.
+- `use TAG --scope` / `use --default TAG` / `current`: build then switch corpus CURRENT; incomplete FETCHED refuses; `use latest` pins a concrete lock tag; invalidates `last.json`.
+- `pull` report only; `pull --apply` fetch still no CURRENT switch.
+- `build --scope` default incremental; `--full` force. Resume `{artifact}.tmp` + `PROGRESS.json`; never publish tmp as CURRENT.
+- `gc` / `prune` / `prune --dry-run`: never delete CURRENT.
 - Bare `cbeta` with no argv opens the **REPL** (`cmd_repl.rs`; colon cmds `:q`/`:quit`, `:scope <work_id>`, `:open N`, `:copy N`, `:verify <quote>`; no `:help`, no flags on a query line). `cbeta 色即是空` (query argv) is search (no-subcommand → `Action::Search`).
 - `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`. `get` line_id optional with `--from last --index N`.
 - `read <work> --juan <N>` lists lines; `cite <line_id>` prints citation; `--copy` prints notes block to stdout (no xclip/arboard).
