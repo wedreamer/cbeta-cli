@@ -530,9 +530,7 @@ fn use_2026r2_scope_ci_minimal_switches_current() {
         "CURRENT must not be a .tmp path: {cur}"
     );
     assert!(
-        !current_path
-            .to_string_lossy()
-            .contains(".tmp"),
+        !current_path.to_string_lossy().contains(".tmp"),
         "CURRENT path must not be under .tmp"
     );
 
@@ -546,10 +544,7 @@ fn use_2026r2_scope_ci_minimal_switches_current() {
         "stderr={}",
         String::from_utf8_lossy(&cur_out.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&cur_out.stdout).trim(),
-        "2026R2"
-    );
+    assert_eq!(String::from_utf8_lossy(&cur_out.stdout).trim(), "2026R2");
 
     let _ = fs::remove_dir_all(&home);
     let _ = fs::remove_dir_all(&index);

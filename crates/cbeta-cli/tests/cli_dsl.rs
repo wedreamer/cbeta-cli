@@ -260,13 +260,9 @@ fn search_or_comma_two_mini_terms_exit_0() {
     let hits = assert_hits_doc(&v, &stdout);
     assert!(!hits.is_empty(), "expected OR hit; got {stdout}");
     assert_hit_product_fields(&hits[0]);
-    let ids: Vec<&str> = hits
-        .iter()
-        .filter_map(|h| h["line_id"].as_str())
-        .collect();
+    let ids: Vec<&str> = hits.iter().filter_map(|h| h["line_id"].as_str()).collect();
     assert!(
-        ids.iter().any(|id| *id == "T30n1578_p0268b21")
-            || ids.iter().any(|id| id.starts_with("T08n0235")),
+        ids.contains(&"T30n1578_p0268b21") || ids.iter().any(|id| id.starts_with("T08n0235")),
         "expected T1578 or T0235 hit; got {ids:?}"
     );
 }
@@ -292,7 +288,10 @@ fn search_not_exclude_absent_term_still_hits() {
     let v: serde_json::Value =
         serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json: {e}; stdout={stdout}"));
     let hits = assert_hits_doc(&v, &stdout);
-    assert!(!hits.is_empty(), "expected hits after NOT absent; got {stdout}");
+    assert!(
+        !hits.is_empty(),
+        "expected hits after NOT absent; got {stdout}"
+    );
     assert_hit_product_fields(&hits[0]);
 }
 

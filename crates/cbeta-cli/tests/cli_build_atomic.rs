@@ -42,16 +42,14 @@ fn seed_leftover_tmp(index: &Path) -> PathBuf {
     // Poison proves --full wipe (resume would keep this file under a reused tmp).
     fs::write(tmp.join("POISON_LEFTOVER"), b"stale-tmp-must-die")
         .unwrap_or_else(|e| panic!("plant poison: {e}"));
-    let progress = format!(
-        r#"{{
+    let progress = r#"{
   "schema": "cbeta-cli.progress/v1",
   "work_id": "T0235",
   "xml_sha256": "deadbeefcafebabe",
   "tag": "2026R2",
   "scope_hash": "c1f1x7a0"
-}}
-"#
-    );
+}
+"#;
     fs::write(tmp.join("PROGRESS.json"), progress)
         .unwrap_or_else(|e| panic!("write PROGRESS.json: {e}"));
     tmp

@@ -432,8 +432,7 @@ fn non_surface_rest_not_product_200() {
     assert_ne!(st_get, 200, "GET /search must not be 200");
 
     // When: POST /get
-    let get_body =
-        serde_json::to_string(&json!({ "line_id": EXPECT_LINE_ID })).expect("serialize");
+    let get_body = serde_json::to_string(&json!({ "line_id": EXPECT_LINE_ID })).expect("serialize");
     let (st_post_get, body_post_get) = http_post_json(port, "/get", &get_body);
     // Then: not product 200
     assert!(

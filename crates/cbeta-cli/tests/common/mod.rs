@@ -1,4 +1,9 @@
 //! Shared helpers for cbeta-cli integration tests (mini corpus + temp index).
+//!
+//! Each integration binary compiles this module separately; not every binary
+//! uses every helper, so dead_code would false-positive without this allow.
+
+#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -75,7 +80,7 @@ pub fn cbeta_full_enabled() -> bool {
 
 /// Return `true` when the caller must return early (full-corpus lane off).
 ///
-/// Prefer this over `#[ignore]` so the test stays compiled and counted in CI.
+/// Prefer this over ignore attributes so the test stays compiled and counted in CI.
 #[must_use]
 pub fn skip_unless_cbeta_full() -> bool {
     !cbeta_full_enabled()

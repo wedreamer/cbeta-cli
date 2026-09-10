@@ -42,9 +42,8 @@ fn stdout_utf8(out: &Output) -> String {
 
 /// Real xml-p5 pin. Call only after [`skip_unless_cbeta_full`] is false.
 fn corpus_2026r2() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| {
-        panic!("HOME must be set to resolve ~/.cbeta/corpus/2026R2")
-    });
+    let home = std::env::var("HOME")
+        .unwrap_or_else(|_| panic!("HOME must be set to resolve ~/.cbeta/corpus/2026R2"));
     let p = PathBuf::from(home)
         .join(".cbeta")
         .join("corpus")
@@ -107,11 +106,7 @@ fn defect_ledger_catalog_title_chengweishi_never_exit_2() {
         String::from_utf8_lossy(&tty.stderr)
     );
     // When: same filter with --json
-    let json = run(
-        &corpus,
-        &index,
-        &["catalog", "--json", "--title", "成唯識"],
-    );
+    let json = run(&corpus, &index, &["catalog", "--json", "--title", "成唯識"]);
     let json_code = json.status.code();
     assert!(
         json_code == Some(0) || json_code == Some(1),
@@ -148,11 +143,7 @@ fn defect_ledger_catalog_title_simplified_misses_t1585() {
         "DEFECT_LEDGER: simplified 成唯识 must not surface T1585; got:\n{tty_out}"
     );
     // When: --json
-    let json = run(
-        &corpus,
-        &index,
-        &["catalog", "--json", "--title", "成唯识"],
-    );
+    let json = run(&corpus, &index, &["catalog", "--json", "--title", "成唯识"]);
     let json_out = stdout_utf8(&json);
     let json_code = json.status.code();
     assert!(

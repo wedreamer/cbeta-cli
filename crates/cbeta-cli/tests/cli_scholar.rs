@@ -15,7 +15,10 @@ fn corpus_2026r2() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| {
         panic!("HOME must be set to resolve scholar corpus ~/.cbeta/corpus/2026R2")
     });
-    let p = PathBuf::from(home).join(".cbeta").join("corpus").join("2026R2");
+    let p = PathBuf::from(home)
+        .join(".cbeta")
+        .join("corpus")
+        .join("2026R2");
     if !p.is_dir() {
         panic!(
             "scholar corpus missing at {} — expected real xml-p5 2026R2 (no mini fallback)",
@@ -141,11 +144,7 @@ fn full_search_mode_phrase_hits_yuan_sheng() {
     // Given: real 2026R2 + ci-minimal index
     let (corpus, index) = built_scholar();
     // When: phrase mode on consecutive canon string
-    let out = run(
-        corpus,
-        index,
-        &["search", "--mode", "phrase", "如幻緣生故"],
-    );
+    let out = run(corpus, index, &["search", "--mode", "phrase", "如幻緣生故"]);
     let stdout = stdout_utf8(&out);
     let stderr = String::from_utf8_lossy(&out.stderr);
     // Then: hits T30n1578_p0268b21
