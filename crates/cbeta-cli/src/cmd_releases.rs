@@ -116,7 +116,6 @@ mod tests {
 
     #[test]
     fn releases_remote_exits_2() {
-        // Force offline: unreachable CBETA_GIT_BASE (no live GitHub).
         let _g = env_lock();
         std::env::set_var("CBETA_GIT_BASE", "http://127.0.0.1:1");
         let mut out = bare();
@@ -124,5 +123,72 @@ mod tests {
         let code = run(&out);
         assert_eq!(code, 2);
         std::env::remove_var("CBETA_GIT_BASE");
+    }
+
+    #[test]
+    fn releases_local_with_current_marks_star() {
+        let _g = env_lock();
+        let home = std::env::temp_dir().join(format!(
+            "cbeta-rel-cur-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
+        std::fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        std::env::set_var("HOME", &home);
+        assert_eq!(run(&bare()), 0);
+        std::env::remove_var("HOME");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn releases_remote_success_with_fake_git() {
+        use std::os::unix::fs::PermissionsExt;
+        let _g = env_lock();
+        let home = std::env::temp_dir().join(format!(
+            "cbeta-rel-remote-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        let bin = home.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("git");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo "git version 2.40.0"; exit 0; fi
+if [ "$1" = "ls-remote" ]; then
+  echo "dbdea41071e1e260ad84b72faefd4587333cf76d	refs/tags/2026R2"
+  echo "dbdea41071e1e260ad84b72faefd4587333cf76d	refs/tags/2026R2^{}"
+  exit 0
+fi
+exit 1
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+        let old_path = std::env::var("PATH").ok();
+        std::env::set_var(
+            "PATH",
+            format!("{}:{}", bin.display(), old_path.as_deref().unwrap_or("")),
+        );
+        std::env::remove_var("CBETA_GIT_BASE");
+        let mut out = bare();
+        out.remote = true;
+        assert_eq!(run(&out), 0);
+        if let Some(p) = old_path {
+            std::env::set_var("PATH", p);
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

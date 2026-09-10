@@ -96,3 +96,207 @@ fn run_inner(out: &CliOut) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use cbeta_core::{Action, Filters};
+
+    use crate::env_paths::env_lock;
+
+    fn bare() -> CliOut {
+        CliOut {
+            action: Action::Pull,
+            q: None,
+            json: false,
+            mode: None,
+            explain: false,
+            plain: false,
+            script: None,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
+            save: None,
+            from: None,
+            hit_index: None,
+            shell: None,
+            http: None,
+            release: None,
+            remote: false,
+            apply: false,
+            full: false,
+            dry_run: false,
+            default_tag: None,
+            scope: None,
+        }
+    }
+
+    fn temp_home(prefix: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-pull-{prefix}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(p.join(".cbeta").join("corpus")).unwrap();
+        p
+    }
+
+    fn install_fake_git(bin_dir: &Path) {
+        fs::create_dir_all(bin_dir).unwrap();
+        let script = bin_dir.join("git");
+        fs::write(
+            &script,
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo "git version 2.40.0"; exit 0; fi
+if [ "$1" = "ls-remote" ]; then
+  echo "dbdea41071e1e260ad84b72faefd4587333cf76d	refs/tags/2026R2"
+  echo "dbdea41071e1e260ad84b72faefd4587333cf76d	refs/tags/2026R2^{}"
+  echo "2b8ab8d5e4fe957a9b94f2cde01cb0d2e2dcd2b9	refs/tags/2026R1"
+  exit 0
+fi
+exit 1
+"#,
+        )
+        .unwrap();
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).unwrap();
+    }
+
+    fn prepend_path(bin_dir: &Path) -> String {
+        let old = std::env::var("PATH").unwrap_or_default();
+        format!("{}:{old}", bin_dir.display())
+    }
+
+    #[test]
+    fn pull_report_behind_success() {
+        let _g = env_lock();
+        let home = temp_home("behind");
+        let bin = home.join("bin");
+        install_fake_git(&bin);
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2025R3\n").unwrap();
+        fs::create_dir_all(home.join(".cbeta/corpus/2025R3")).unwrap();
+
+        let old_path = std::env::var("PATH").ok();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("PATH", prepend_path(&bin));
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_GIT_BASE");
+
+        let code = run(&bare());
+        assert_eq!(code, 0);
+        let cur = fs::read_to_string(home.join(".cbeta/corpus/CURRENT")).unwrap();
+        assert_eq!(cur.trim(), "2025R3", "pull must never rewrite CURRENT");
+
+        if let Some(p) = old_path {
+            std::env::set_var("PATH", p);
+        }
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn pull_already_at_latest_with_apply() {
+        let _g = env_lock();
+        let home = temp_home("latest");
+        let bin = home.join("bin");
+        install_fake_git(&bin);
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
+
+        let old_path = std::env::var("PATH").ok();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("PATH", prepend_path(&bin));
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_GIT_BASE");
+
+        let mut out = bare();
+        out.apply = true;
+        let code = run(&out);
+        assert_eq!(code, 0);
+        let cur = fs::read_to_string(home.join(".cbeta/corpus/CURRENT")).unwrap();
+        assert_eq!(cur.trim(), "2026R2");
+
+        if let Some(p) = old_path {
+            std::env::set_var("PATH", p);
+        }
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn pull_apply_behind_fetch_fails() {
+        let _g = env_lock();
+        let home = temp_home("apply-fail");
+        let bin = home.join("bin");
+        install_fake_git(&bin);
+        let idx = home.join("idx");
+        fs::create_dir_all(&idx).unwrap();
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2025R3\n").unwrap();
+        fs::create_dir_all(home.join(".cbeta/corpus/2025R3")).unwrap();
+
+        let old_path = std::env::var("PATH").ok();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("CBETA_INDEX", &idx);
+        std::env::set_var("PATH", prepend_path(&bin));
+        std::env::remove_var("CBETA_CORPUS");
+        std::env::remove_var("CBETA_GIT_BASE");
+
+        let mut out = bare();
+        out.apply = true;
+        let code = run(&out);
+        assert_eq!(code, 2);
+        let cur = fs::read_to_string(home.join(".cbeta/corpus/CURRENT")).unwrap();
+        assert_eq!(cur.trim(), "2025R3", "failed apply must leave CURRENT");
+
+        if let Some(p) = old_path {
+            std::env::set_var("PATH", p);
+        }
+        std::env::remove_var("HOME");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn pull_ls_remote_fail_exits_2() {
+        let _g = env_lock();
+        let home = temp_home("ls-fail");
+        let bin = home.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let script = bin.join("git");
+        fs::write(
+            &script,
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo "git version 2.40.0"; exit 0; fi
+exit 1
+"#,
+        )
+        .unwrap();
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).unwrap();
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+
+        let old_path = std::env::var("PATH").ok();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("PATH", prepend_path(&bin));
+        std::env::remove_var("CBETA_GIT_BASE");
+
+        assert_eq!(run(&bare()), 2);
+
+        if let Some(p) = old_path {
+            std::env::set_var("PATH", p);
+        }
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+}
