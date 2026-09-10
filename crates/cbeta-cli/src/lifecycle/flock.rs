@@ -220,4 +220,115 @@ mod tests {
         assert!(dir.join("tag").is_dir() || dest.parent().map(|p| p.exists()).unwrap_or(false));
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn steal_stale_lock_dead_pid() {
+        let dir = temp_lock_path("stale");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cbeta.lock");
+        fs::write(&path, "1000000\n").unwrap();
+        let lock = try_acquire_at(&path).expect("should steal dead pid lock");
+        drop(lock);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn steal_empty_and_garbage_pid() {
+        let dir = temp_lock_path("garbage");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cbeta.lock");
+        fs::write(&path, "").unwrap();
+        assert!(try_acquire_at(&path).is_ok());
+        drop(try_acquire_at(&path).ok());
+        fs::write(&path, "not-a-pid\n").unwrap();
+        assert!(try_acquire_at(&path).is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_lock_path_uses_cbeta_index() {
+        let _g = crate::env_paths::env_lock();
+        let dir = temp_lock_path("idx-env");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+        let p = default_lock_path().unwrap();
+        assert_eq!(p, dir.join("cbeta.lock"));
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_lock_path_falls_back_to_home() {
+        let _g = crate::env_paths::env_lock();
+        let home = temp_lock_path("home-env");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&home).unwrap();
+        std::env::set_var("CBETA_INDEX", "");
+        std::env::set_var("HOME", &home);
+        let p = default_lock_path().unwrap();
+        assert_eq!(p, home.join(".cbeta").join("cbeta.lock"));
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn process_alive_pid1_and_huge() {
+        assert!(process_alive(1), "pid 1 should exist on Linux");
+        assert!(!process_alive(4_000_000_000), "huge pid must be dead");
+    }
+
+    #[test]
+    fn try_acquire_uses_default_lock_path() {
+        let _g = crate::env_paths::env_lock();
+        let dir = temp_lock_path("try-acq");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+        let lock = try_acquire().expect("acquire");
+        assert!(dir.join("cbeta.lock").is_file());
+        drop(lock);
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_lock_path_errors_without_home() {
+        let _g = crate::env_paths::env_lock();
+        std::env::remove_var("CBETA_INDEX");
+        std::env::remove_var("HOME");
+        let err = default_lock_path().unwrap_err();
+        assert!(err.contains("HOME"), "err={err}");
+    }
+
+    #[test]
+    fn steal_refuses_own_pid() {
+        let dir = temp_lock_path("own-pid");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cbeta.lock");
+        fs::write(&path, format!("{}\n", std::process::id())).unwrap();
+        assert!(!steal_stale_lock(&path));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn steal_refuses_live_pid1() {
+        let dir = temp_lock_path("live-pid");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cbeta.lock");
+        fs::write(&path, "1\n").unwrap();
+        assert!(!steal_stale_lock(&path));
+        let err = try_acquire_at(&path).unwrap_err();
+        assert!(
+            err.contains("锁") || err.contains(LOCK_HELD_MSG),
+            "err={err}"
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

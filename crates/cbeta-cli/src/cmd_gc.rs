@@ -186,14 +186,62 @@ fn read_index_current(root: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use cbeta_core::{Action, Filters};
+
+    use crate::cli_resolve::CliOut;
+    use crate::env_paths::env_lock;
+
+    fn bare() -> CliOut {
+        CliOut {
+            action: Action::Gc,
+            q: None,
+            json: false,
+            mode: None,
+            explain: false,
+            plain: false,
+            script: None,
+            filters: Filters::default(),
+            context: 0,
+            copy: false,
+            save: None,
+            from: None,
+            hit_index: None,
+            shell: None,
+            http: None,
+            release: None,
+            remote: false,
+            apply: false,
+            full: false,
+            dry_run: false,
+            default_tag: None,
+            scope: None,
+        }
+    }
+
+    fn temp_home(prefix: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "cbeta-gc-{prefix}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(p.join(".cbeta").join("corpus")).unwrap();
+        p
+    }
 
     #[test]
     fn list_skips_current_and_pointer_files() {
         let base = std::env::temp_dir().join(format!(
             "cbeta-gc-list-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
@@ -211,5 +259,189 @@ mod tests {
     fn ensure_not_current_blocks() {
         let err = ensure_not_current("2026R2", Some("2026R2")).unwrap_err();
         assert!(err.contains("CURRENT"));
+    }
+
+    #[test]
+    fn list_prunable_on_non_dir_is_empty() {
+        let p = PathBuf::from("/tmp/cbeta-gc-not-a-dir-does-not-exist-xyz");
+        assert!(list_prunable_tags(&p, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn run_gc_removes_non_current_keeps_current() {
+        let _g = env_lock();
+        let home = temp_home("run");
+        let cache = home.join(".cbeta/corpus");
+        fs::create_dir_all(cache.join("2026R2")).unwrap();
+        fs::create_dir_all(cache.join("2025R3")).unwrap();
+        fs::write(cache.join("CURRENT"), "2026R2\n").unwrap();
+        let idx = home.join("idx");
+        fs::create_dir_all(&idx).unwrap();
+
+        std::env::set_var("HOME", &home);
+        std::env::set_var("CBETA_INDEX", &idx);
+        std::env::remove_var("CBETA_CORPUS");
+
+        assert_eq!(run(&bare()), 0);
+        assert!(cache.join("2026R2").is_dir());
+        assert!(!cache.join("2025R3").exists());
+
+        std::env::remove_var("HOME");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_dry_run_lists_would_delete() {
+        let _g = env_lock();
+        let home = temp_home("dry");
+        let cache = home.join(".cbeta/corpus");
+        fs::create_dir_all(cache.join("2026R2")).unwrap();
+        fs::create_dir_all(cache.join("2025R3")).unwrap();
+        fs::write(cache.join("CURRENT"), "2026R2\n").unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("CBETA_CORPUS");
+
+        let mut out = bare();
+        out.action = Action::Prune;
+        out.dry_run = true;
+        assert_eq!(run_prune(&out), 0);
+        assert!(cache.join("2025R3").is_dir(), "dry-run must not delete");
+
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_deletes_named_tag() {
+        let _g = env_lock();
+        let home = temp_home("del");
+        let cache = home.join(".cbeta/corpus");
+        fs::create_dir_all(cache.join("2026R2")).unwrap();
+        fs::create_dir_all(cache.join("2025R3")).unwrap();
+        fs::write(cache.join("CURRENT"), "2026R2\n").unwrap();
+        std::env::set_var("HOME", &home);
+
+        let mut out = bare();
+        out.action = Action::Prune;
+        out.q = Some("2025R3".into());
+        assert_eq!(run_prune(&out), 0);
+        assert!(!cache.join("2025R3").exists());
+        assert!(cache.join("2026R2").is_dir());
+
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_missing_tag_exits_2() {
+        let _g = env_lock();
+        let home = temp_home("miss");
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
+        std::env::set_var("HOME", &home);
+
+        let mut out = bare();
+        out.q = Some("2099R1".into());
+        assert_eq!(run_prune(&out), 2);
+
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_empty_q_without_dry_run_exits_2() {
+        let _g = env_lock();
+        let home = temp_home("empty-q");
+        fs::create_dir_all(home.join(".cbeta/corpus")).unwrap();
+        std::env::set_var("HOME", &home);
+
+        let out = bare();
+        assert_eq!(run_prune(&out), 2);
+
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn gc_unused_index_drops_stale_keeps_current_artifact() {
+        let _g = env_lock();
+        let home = temp_home("idx");
+        let cache = home.join(".cbeta/corpus");
+        fs::create_dir_all(cache.join("2026R2")).unwrap();
+        fs::write(cache.join("CURRENT"), "2026R2\n").unwrap();
+        let idx = home.join("idx");
+        fs::create_dir_all(idx.join("2026R2+abc")).unwrap();
+        fs::create_dir_all(idx.join("2025R3+old")).unwrap();
+        fs::write(idx.join("CURRENT"), "2026R2+abc\n").unwrap();
+
+        std::env::set_var("HOME", &home);
+        std::env::set_var("CBETA_INDEX", &idx);
+
+        assert_eq!(run(&bare()), 0);
+        assert!(idx.join("2026R2+abc").is_dir());
+        assert!(!idx.join("2025R3+old").exists());
+
+        std::env::remove_var("HOME");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn read_index_current_empty_is_none() {
+        let base = temp_home("empty-cur");
+        let idx = base.join("idx");
+        fs::create_dir_all(&idx).unwrap();
+        fs::write(idx.join("CURRENT"), "\n").unwrap();
+        assert!(read_index_current(&idx).is_none());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn run_gc_nothing_to_remove() {
+        let _g = env_lock();
+        let home = temp_home("empty-gc");
+        let cache = home.join(".cbeta/corpus");
+        fs::create_dir_all(cache.join("2026R2")).unwrap();
+        fs::write(cache.join("CURRENT"), "2026R2\n").unwrap();
+        fs::write(cache.join("note.txt"), "file not dir\n").unwrap();
+        let idx = home.join("idx");
+        fs::create_dir_all(&idx).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("CBETA_INDEX", &idx);
+        assert_eq!(run(&bare()), 0);
+        assert!(cache.join("2026R2").is_dir());
+        std::env::remove_var("HOME");
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_dry_run_named_missing_exits_2() {
+        let _g = env_lock();
+        let home = temp_home("dry-miss");
+        fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        std::env::set_var("HOME", &home);
+        let mut out = bare();
+        out.dry_run = true;
+        out.q = Some("2099R1".into());
+        assert_eq!(run_prune(&out), 2);
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn run_prune_dry_run_nothing() {
+        let _g = env_lock();
+        let home = temp_home("dry-empty");
+        fs::create_dir_all(home.join(".cbeta/corpus/2026R2")).unwrap();
+        fs::write(home.join(".cbeta/corpus/CURRENT"), "2026R2\n").unwrap();
+        std::env::set_var("HOME", &home);
+        let mut out = bare();
+        out.dry_run = true;
+        assert_eq!(run_prune(&out), 0);
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
     }
 }
