@@ -9,7 +9,7 @@ cbeta 真性有为空
 数据仓库：[wedreamer/cbeta-corpus](https://github.com/wedreamer/cbeta-corpus)
 跟踪：[#1 v0.1 人用最小闭环](https://github.com/wedreamer/cbeta-cli/issues/1)
 
-> 状态（**2026-09-10**）：**v0.1 搜索闭环已落地**；**v0.2 语料生命周期（Now）**：`fetch` / `releases` / `use` / `current` / `pull` / `gc` / `prune` / 增量 `build`。仍 Later：`--window`、分页器（pager）、管道 JSONL 默认、`fuzzy`、P3 semantic。
+> 状态（**2026-09-11**）：**v0.2.0 已发版**（语料生命周期：`fetch` / `releases` / `use` / `current` / `pull` / `gc` / `prune` / 增量 `build`）。仍 Later：`--window`、分页器（pager）、管道 JSONL 默认、`fuzzy`、P3 semantic。
 
 ## 安装
 
@@ -31,8 +31,6 @@ cbeta 真性有为空
 curl -fsSL -O https://github.com/wedreamer/cbeta-cli/releases/latest/download/cbeta-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf cbeta-x86_64-unknown-linux-gnu.tar.gz
 ```
-
-首次 tag 发布前，用下面的 cargo 安装。
 
 ### 从源码
 
