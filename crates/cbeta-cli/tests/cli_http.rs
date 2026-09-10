@@ -791,9 +791,9 @@ fn http_mcp_two_sessions_overlap() {
     let sid_b = mcp_initialize_session(port);
     assert_ne!(
         sid_a, sid_b,
-        "two sessions must get distinct mcp-session-id; both={sid_a}"
+        "two sessions must get distinct mcp-session-id"
     );
-    eprintln!("notes: http_mcp_two_sessions_overlap sid_a={sid_a} sid_b={sid_b}");
+    eprintln!("notes: http_mcp_two_sessions_overlap two distinct sessions");
 
     let call_body = |id: u64| {
         serde_json::to_string(&json!({
