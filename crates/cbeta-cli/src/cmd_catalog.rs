@@ -60,6 +60,7 @@ pub fn run_info(cmd: &Command) -> i32 {
                     "tag={} scope={} artifact={} works={} path={}",
                     info.cbeta_tag, info.scope, info.artifact_id, info.work_count, info.index_path
                 );
+                print_info_tty_extras(&info);
             }
             0
         }
@@ -68,6 +69,26 @@ pub fn run_info(cmd: &Command) -> i32 {
             2
         }
     }
+}
+
+fn print_info_tty_extras(info: &IndexInfo) {
+    let corpus_tag = crate::lifecycle::paths::current_tag().ok();
+    if let Some(ref t) = corpus_tag {
+        println!("corpus_current={t}");
+    }
+    let stale = match (
+        corpus_tag.as_deref().or(Some(info.cbeta_tag.as_str())),
+        crate::lifecycle::lock::load_lock()
+            .ok()
+            .and_then(|l| crate::lifecycle::lock::newest_lock_tag(&l).map(str::to_string)),
+    ) {
+        (Some(cur), Some(latest)) => {
+            crate::lifecycle::lock::cmp_release_tag(cur, &latest) == std::cmp::Ordering::Less
+        }
+        _ => false,
+    };
+    println!("stale={stale}");
+    println!("{}", crate::cmd_fetch::DISK_HINT);
 }
 
 /// Load active index metadata (shared by CLI `info` and MCP `cbeta_index_info`).
@@ -255,7 +276,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&cmd), 0);
+        assert_eq!(crate::cmd_build::run(&cmd, false), 0);
     }
 
     #[test]

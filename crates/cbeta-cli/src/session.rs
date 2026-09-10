@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use cbeta_core::{Filters, Hit};
+use cbeta_core::{Filters, Hit, IndexInfo};
 use serde::{Deserialize, Serialize};
 
 /// On-disk shape of `last.json` written by `search --save last`.
@@ -21,6 +21,23 @@ pub struct SavedSearch {
     pub hits: Vec<Hit>,
     /// Index artifact id at save time (`{cbeta_tag}+{scope_hash}`).
     pub artifact_id: String,
+    /// Corpus release tag at save time (empty in legacy last.json).
+    #[serde(default)]
+    pub cbeta_tag: String,
+}
+
+/// Refuse `--from last` when the active index no longer matches the session.
+///
+/// # Errors
+/// Artifact or tag mismatch → message for exit 2.
+pub fn session_matches_index(session: &SavedSearch, info: &IndexInfo) -> Result<(), String> {
+    if session.artifact_id != info.artifact_id {
+        return Err("index changed; re-run search".into());
+    }
+    if !session.cbeta_tag.is_empty() && session.cbeta_tag != info.cbeta_tag {
+        return Err("index changed; re-run search".into());
+    }
+    Ok(())
 }
 
 /// Path of `last.json`: under `CBETA_INDEX` when set, else `$HOME/.cbeta/last.json`.
@@ -114,7 +131,27 @@ mod tests {
             filters: Filters::default(),
             hits: vec![sample_hit("T30n1578_p0268b21")],
             artifact_id: "2026R2+abc".into(),
+            cbeta_tag: "2026R2".into(),
         }
+    }
+
+    #[test]
+    fn from_last_tag_mismatch_exits_2() {
+        let session = SavedSearch {
+            cbeta_tag: "2025R3".into(),
+            artifact_id: "2026R2+abc".into(),
+            ..sample_session()
+        };
+        let info = IndexInfo {
+            cbeta_tag: "2026R2".into(),
+            scope: "ci-minimal".into(),
+            artifact_id: "2026R2+abc".into(),
+            work_count: 1,
+            index_path: "/tmp/x".into(),
+        };
+        let err = session_matches_index(&session, &info).unwrap_err();
+        assert!(err.contains("index changed"));
+        assert!(session_matches_index(&sample_session(), &info).is_ok());
     }
 
     #[test]
