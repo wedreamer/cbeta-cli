@@ -30,6 +30,20 @@ pub struct CliOut {
     pub shell: Option<clap_complete::Shell>,
     /// `serve --http ADDR`; None means stdio MCP.
     pub http: Option<String>,
+    /// `fetch --release` / concrete release tag string.
+    pub release: Option<String>,
+    /// `releases --remote`.
+    pub remote: bool,
+    /// `pull --apply`.
+    pub apply: bool,
+    /// `build --full`.
+    pub full: bool,
+    /// `prune --dry-run`.
+    pub dry_run: bool,
+    /// `use --default TAG`.
+    pub default_tag: Option<String>,
+    /// `use --scope` / `fetch --scope` (build keeps scope in `q`).
+    pub scope: Option<String>,
 }
 
 fn merge_filters(
@@ -77,6 +91,13 @@ pub fn resolve(cli: Cli) -> CliOut {
         hit_index,
         shell: None,
         http: None,
+        release: None,
+        remote: false,
+        apply: false,
+        full: false,
+        dry_run: false,
+        default_tag: None,
+        scope: None,
     };
     match cli.command {
         None => {}
@@ -128,9 +149,10 @@ pub fn resolve(cli: Cli) -> CliOut {
             out.explain = false;
             out.filters = Filters::default();
         }
-        Some(Cmds::Build { scope }) => {
+        Some(Cmds::Build { scope, full }) => {
             out.action = Action::Build;
             out.q = scope;
+            out.full = full;
             out.mode = None;
             out.explain = false;
             out.script = None;
@@ -172,6 +194,68 @@ pub fn resolve(cli: Cli) -> CliOut {
             out.from = None;
             out.hit_index = None;
             out.shell = Some(shell);
+        }
+        Some(Cmds::Fetch { release, scope }) => {
+            out.action = Action::Fetch;
+            out.q = Some(release.clone());
+            out.release = Some(release);
+            out.scope = scope;
+            out.mode = None;
+            out.explain = false;
+            out.script = None;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Releases { remote }) => {
+            out.action = Action::Releases;
+            out.q = None;
+            out.remote = remote;
+            out.mode = None;
+            out.explain = false;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Use {
+            tag,
+            scope,
+            default_tag,
+        }) => {
+            out.action = Action::Use;
+            out.q = tag;
+            out.scope = scope;
+            out.default_tag = default_tag;
+            out.mode = None;
+            out.explain = false;
+            out.script = None;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Current) => {
+            out.action = Action::Current;
+            out.q = None;
+            out.mode = None;
+            out.explain = false;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Pull { apply }) => {
+            out.action = Action::Pull;
+            out.q = None;
+            out.apply = apply;
+            out.mode = None;
+            out.explain = false;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Gc) => {
+            out.action = Action::Gc;
+            out.q = None;
+            out.mode = None;
+            out.explain = false;
+            out.filters = Filters::default();
+        }
+        Some(Cmds::Prune { tag, dry_run }) => {
+            out.action = Action::Prune;
+            out.q = tag;
+            out.dry_run = dry_run;
+            out.mode = None;
+            out.explain = false;
+            out.filters = Filters::default();
         }
     }
     out

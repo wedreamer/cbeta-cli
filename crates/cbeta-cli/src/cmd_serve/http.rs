@@ -258,7 +258,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
         assert!(open_index_once().is_some());
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
@@ -347,7 +347,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
 
         let open = OpenIndex::open(&index).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

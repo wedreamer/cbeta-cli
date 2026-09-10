@@ -350,7 +350,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build), 0);
+        assert_eq!(crate::cmd_build::run(&build, false), 0);
 
         let (code, err) = run_lines(
             "真性有为空\n:open 99\n:open 1\n:copy 1\n:verify 真性有為空，如幻緣生故\n:q\n",

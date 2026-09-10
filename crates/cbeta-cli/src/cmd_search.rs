@@ -28,7 +28,7 @@ pub fn run(cmd: &Command, script: Option<&str>, save: Option<&str>) -> i32 {
     let hits = match search(&root, parsed, &cmd.filters, DEFAULT_LIMIT) {
         Ok(h) => h,
         Err(SearchError::NoIndex(p)) => {
-            eprintln!("no index found under {p}; run: cbeta build --scope <name>");
+            crate::index_hint::eprint_no_index(&p);
             return 2;
         }
         Err(e) => {
@@ -39,8 +39,8 @@ pub fn run(cmd: &Command, script: Option<&str>, save: Option<&str>) -> i32 {
 
     // WHY: persist RAW engine hits (not display clones) so --from last stays index-faithful.
     if save == Some("last") {
-        let artifact_id = match crate::cmd_catalog::load_info() {
-            Ok(info) => info.artifact_id,
+        let (artifact_id, cbeta_tag) = match crate::cmd_catalog::load_info() {
+            Ok(info) => (info.artifact_id, info.cbeta_tag),
             Err(e) => {
                 eprintln!("{e}");
                 return 2;
@@ -51,6 +51,7 @@ pub fn run(cmd: &Command, script: Option<&str>, save: Option<&str>) -> i32 {
             filters: cmd.filters.clone(),
             hits: hits.clone(),
             artifact_id,
+            cbeta_tag,
         };
         if let Err(e) = crate::session::save_last(&session) {
             eprintln!("{e}");
@@ -197,7 +198,7 @@ mod tests {
             context: None,
             copy: false,
         };
-        assert_eq!(crate::cmd_build::run(&build_cmd), 0);
+        assert_eq!(crate::cmd_build::run(&build_cmd, false), 0);
         let out = f();
         std::env::remove_var("CBETA_CORPUS");
         std::env::remove_var("CBETA_INDEX");
