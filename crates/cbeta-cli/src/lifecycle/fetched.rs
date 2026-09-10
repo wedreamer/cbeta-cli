@@ -198,7 +198,6 @@ mod tests {
 
     #[test]
     fn fetch_latest_stores_concrete_tag() {
-        // resolve lives in lock; this locks FETCHED never stores "latest".
         let _g = env_lock();
         let home = temp_home("cbeta-fetched-latest");
         std::env::set_var("HOME", &home);
@@ -215,5 +214,38 @@ mod tests {
 
         std::env::remove_var("HOME");
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn is_complete_false_on_commit_mismatch() {
+        let _g = env_lock();
+        let home = temp_home("cbeta-fetched-mm");
+        std::env::set_var("HOME", &home);
+        let lock = load_lock().unwrap();
+        let mut pins = lock.releases.get("2026R2").unwrap().clone();
+        let root = tag_dir("2026R2").unwrap();
+        write_fetched("2026R2", &root, &pins).unwrap();
+        pins.xml_p5 = "0000000000000000000000000000000000000000".into();
+        assert!(!is_complete("2026R2", &pins));
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn read_fetched_none_when_missing() {
+        let _g = env_lock();
+        let home = temp_home("cbeta-fetched-miss");
+        std::env::set_var("HOME", &home);
+        assert!(read_fetched("2026R2").unwrap().is_none());
+        std::env::remove_var("HOME");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn civil_from_unix_epoch_day() {
+        let (y, mo, d, h, mi, s) = civil_from_unix(0);
+        assert_eq!((y, mo, d, h, mi, s), (1970, 1, 1, 0, 0, 0));
+        let (y2, mo2, d2, _, _, _) = civil_from_unix(86_400);
+        assert_eq!((y2, mo2, d2), (1970, 1, 2));
     }
 }
