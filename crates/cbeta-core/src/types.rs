@@ -29,6 +29,20 @@ pub enum Action {
     Completion,
     /// CLI-only micro-benchmark over keyword/phrase/near; not an MCP tool.
     Bench,
+    /// Download a pinned corpus release into the local cache (CLI-only).
+    Fetch,
+    /// List known / remote corpus release tags (CLI-only).
+    Releases,
+    /// Switch the active corpus tag / default (CLI-only).
+    Use,
+    /// Report or fetch newer releases without switching CURRENT (CLI-only).
+    Pull,
+    /// Print the active CURRENT corpus tag (CLI-only).
+    Current,
+    /// Garbage-collect unused corpus cache entries (CLI-only).
+    Gc,
+    /// Remove a non-CURRENT corpus tag from the cache (CLI-only).
+    Prune,
 }
 
 /// How results should be rendered.
@@ -190,6 +204,24 @@ mod tests {
             serde_json::from_str::<Action>("\"cite\"").unwrap(),
             Action::Cite
         );
+    }
+
+    #[test]
+    fn action_lifecycle_serde_roundtrip() {
+        let cases = [
+            (Action::Fetch, "fetch"),
+            (Action::Releases, "releases"),
+            (Action::Use, "use"),
+            (Action::Pull, "pull"),
+            (Action::Current, "current"),
+            (Action::Gc, "gc"),
+            (Action::Prune, "prune"),
+        ];
+        for (action, name) in cases {
+            let json = format!("\"{name}\"");
+            assert_eq!(serde_json::to_string(&action).unwrap(), json);
+            assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
+        }
     }
 
     #[test]
