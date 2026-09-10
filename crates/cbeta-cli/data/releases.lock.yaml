@@ -1,0 +1,18 @@
+schema: cbeta-cli.releases/v1
+official:
+  xml-p5: https://github.com/cbeta-org/xml-p5.git
+  metadata: https://github.com/DILA-edu/cbeta-metadata.git
+  gaiji: https://github.com/cbeta-org/cbeta_gaiji.git
+releases:
+  2026R2:
+    xml-p5: dbdea41071e1e260ad84b72faefd4587333cf76d
+    metadata: af914b8d3ce6b7c929cbef5cef061e00bddda929
+    gaiji: 30fb27a9fb7b8619d0f1c7a78c90c0a60108a067
+  2026R1:
+    xml-p5: 2b8ab8d5e4fe957a9b94f2cde01cb0d2e2dcd2b9
+    metadata: af914b8d3ce6b7c929cbef5cef061e00bddda929
+    gaiji: 30fb27a9fb7b8619d0f1c7a78c90c0a60108a067
+  2025R3:
+    xml-p5: e936b9a05281ead232b273fd08aecd45ba61e49e
+    metadata: af914b8d3ce6b7c929cbef5cef061e00bddda929
+    gaiji: 30fb27a9fb7b8619d0f1c7a78c90c0a60108a067

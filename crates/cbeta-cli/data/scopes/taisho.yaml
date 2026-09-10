@@ -1,0 +1,5 @@
+name: taisho
+description: 大正藏 T only
+canons: [T]
+license: cc-by-nc-sa
+exclude_canons: [Y, TX, LC, YP]
