@@ -238,3 +238,84 @@ fn cite_prints_citation_only() {
         "cite-only; got:\n{stdout}"
     );
 }
+
+#[test]
+fn read_without_juan_exits_2() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: read work without --juan (must NOT list all juans)
+    let out = run(&corpus, &index, &["read", "T0235"]);
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: usage exit 2; explicit --juan required message
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "read without --juan exit 2; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("read requires --juan <n>"),
+        "stderr must require --juan; got:\n{stderr}"
+    );
+    // Must not dump juan listing / body as success path.
+    assert!(
+        !stdout.contains("T08n0235") && !stdout.contains("色不異空"),
+        "must not list juans/body without --juan; stdout={stdout}"
+    );
+}
+
+#[test]
+fn cite_ghost_exits_1() {
+    // Given: mini index
+    let (corpus, index) = built();
+    // When: cite ghost line_id (same a12 as get_missing)
+    let out = run(&corpus, &index, &["cite", "T30n1578_p0268a12"]);
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: exit 1; align get 无此行 / 当前
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "cite ghost exit 1; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("无此行") || stderr.contains("當前") || stderr.contains("当前"),
+        "stderr must say 无此行/当前; got:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("(CBETA"),
+        "must not print citation for ghost; stdout={stdout}"
+    );
+}
+
+#[test]
+fn get_script_t_keeps_traditional_and_line_id() {
+    // Given: mini index (text_raw already 繁體)
+    let (corpus, index) = built();
+    // When: get --script t (display-only; never mutates line_id)
+    let out = run(
+        &corpus,
+        &index,
+        &["get", "--script", "t", "T30n1578_p0268b21"],
+    );
+    let stdout = stdout_utf8(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Then: exit 0; line_id unchanged; 繁體 markers 為/緣 present
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "get --script t; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("T30n1578_p0268b21"),
+        "line_id unchanged; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("為") || stdout.contains("緣"),
+        "display 繁 (為/緣); got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("真性有為空") || stdout.contains("如幻緣生故"),
+        "traditional verse body; got:\n{stdout}"
+    );
+}

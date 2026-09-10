@@ -28,6 +28,50 @@ fn build_ci_minimal(corpus: &Path, index: &Path) -> Output {
         .unwrap_or_else(|e| panic!("spawn build: {e}"))
 }
 
+fn build_ci_minimal_full(corpus: &Path, index: &Path) -> Output {
+    cbeta_env(corpus, index)
+        .args(["build", "--full", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("spawn build --full: {e}"))
+}
+
+/// Leftover staging dir + PROGRESS.json (`cbeta-cli.progress/v1`) matching mini ci-minimal.
+fn seed_leftover_tmp(index: &Path) -> PathBuf {
+    let tmp = index.join(format!("{ARTIFACT_NAME}.tmp"));
+    fs::create_dir_all(&tmp).unwrap_or_else(|e| panic!("mkdir leftover tmp: {e}"));
+    // Poison proves --full wipe (resume would keep this file under a reused tmp).
+    fs::write(tmp.join("POISON_LEFTOVER"), b"stale-tmp-must-die")
+        .unwrap_or_else(|e| panic!("plant poison: {e}"));
+    let progress = r#"{
+  "schema": "cbeta-cli.progress/v1",
+  "work_id": "T0235",
+  "xml_sha256": "deadbeefcafebabe",
+  "tag": "2026R2",
+  "scope_hash": "c1f1x7a0"
+}
+"#;
+    fs::write(tmp.join("PROGRESS.json"), progress)
+        .unwrap_or_else(|e| panic!("write PROGRESS.json: {e}"));
+    tmp
+}
+
+/// CURRENT basename must name a complete final artifact — never a `.tmp` staging path.
+fn assert_current_not_tmp(index: &Path) -> String {
+    let name = read_current_name(index);
+    assert!(
+        !name.ends_with(".tmp"),
+        "CURRENT must never publish a .tmp path; got {name:?}; index entries={:?}",
+        list_names(index)
+    );
+    assert!(
+        !name.contains(".tmp"),
+        "CURRENT basename must not contain .tmp; got {name:?}"
+    );
+    let art = index.join(&name);
+    assert_complete_artifact(&art);
+    name
+}
+
 fn assert_build_ok(out: &Output) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -201,4 +245,53 @@ fn rebuild_preserves_previous_artifact_dir_and_current_stays_complete() {
         PathBuf::from(path).is_dir(),
         "info index_path must be a live dir; got {path:?}"
     );
+}
+
+#[test]
+fn build_full_wipes_leftover_tmp_and_never_publishes_tmp_as_current() {
+    // Given: empty index + leftover {artifact}.tmp with matching PROGRESS.json
+    let corpus = mini_corpus();
+    let index = temp_dir("atomic-full-wipe");
+    let leftover = seed_leftover_tmp(&index);
+    assert!(
+        leftover.join("PROGRESS.json").is_file(),
+        "seed must plant PROGRESS.json"
+    );
+    assert!(
+        leftover.join("POISON_LEFTOVER").is_file(),
+        "seed must plant poison marker"
+    );
+
+    // When: `cbeta build --full --scope ci-minimal` (decide_tmp → Wipe)
+    assert_build_ok(&build_ci_minimal_full(&corpus, &index));
+
+    // Then: leftover staging is gone (wiped + published away); poison cannot survive
+    assert!(
+        !leftover.exists() || !leftover.join("POISON_LEFTOVER").is_file(),
+        "build --full must wipe leftover tmp; leftover still has poison; entries={:?}",
+        if leftover.exists() {
+            list_names(&leftover)
+        } else {
+            vec![]
+        }
+    );
+    // Successful publish renames staging off the .tmp path — no incomplete PROGRESS left.
+    if leftover.exists() {
+        assert!(
+            !leftover.join("PROGRESS.json").is_file(),
+            "incomplete PROGRESS.json must not remain after successful --full; entries={:?}",
+            list_names(&leftover)
+        );
+    }
+
+    // CURRENT names a complete final artifact — never a .tmp basename
+    let cur = assert_current_not_tmp(&index);
+    assert!(
+        cur.starts_with(ARTIFACT_NAME) || cur == ARTIFACT_NAME,
+        "CURRENT should be ci-minimal artifact (or unique sibling); got {cur}"
+    );
+
+    // Incremental (no --full) still exit 0 against the published index
+    assert_build_ok(&build_ci_minimal(&corpus, &index));
+    let _ = assert_current_not_tmp(&index);
 }

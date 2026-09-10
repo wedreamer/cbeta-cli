@@ -1,11 +1,68 @@
 //! Wave 1–2 lifecycle surface: clap parse, releases, fetch offline paths.
+//!
+//! Successful `use` paths plant mini under `$HOME/.cbeta/corpus/<tag>/` with a
+//! complete synthetic FETCHED.yaml and **must not** set `CBETA_CORPUS` (that
+//! override skips the FETCHED completeness gate in `cmd_use`).
 
+mod common;
+
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use common::{lock_pins_for, plant_mini_under_tag, temp_dir};
 
 fn bin() -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_cbeta"));
     c.env("NO_COLOR", "1");
     c
+}
+
+/// Spawn `cbeta` for successful-FETCHED lifecycle: HOME + INDEX, no CBETA_CORPUS.
+fn bin_fetched_home(home: &Path, index: &Path) -> Command {
+    let mut c = bin();
+    c.env("HOME", home);
+    c.env("CBETA_INDEX", index);
+    c.env_remove("CBETA_CORPUS");
+    c
+}
+
+/// Plant mini under tag + complete FETCHED; returns tag_dir. Never writes CURRENT.
+///
+/// Writes FETCHED with left-aligned keys (product `FetchedYaml` parse). Pins come
+/// from `lock_pins_for` — never hard-coded SHAs. Does not set CURRENT.
+fn plant_complete_2026r2(home: &Path) -> PathBuf {
+    let tag = "2026R2";
+    let tag_dir = plant_mini_under_tag(home, tag);
+    let pins = lock_pins_for(tag);
+    // WHY: do not use `\n\` continuations — Rust strips next-line indent, breaking
+    // nested `sources.xml-p5`. common::write_complete_fetched_yaml has the same bug.
+    let yaml = [
+        "schema: cbeta-cli.fetched/v1".to_string(),
+        format!("cbeta_release: {tag}"),
+        "fetched_at: 1970-01-01T00:00:00Z".to_string(),
+        format!("cache_root: {}", tag_dir.display()),
+        "sources:".to_string(),
+        "  xml-p5:".to_string(),
+        format!("    tag: {tag}"),
+        format!("    commit: {}", pins.xml_p5),
+        "  metadata:".to_string(),
+        format!("    commit: {}", pins.metadata),
+        "  gaiji:".to_string(),
+        format!("    commit: {}", pins.gaiji),
+        String::new(),
+    ]
+    .join("\n");
+    fs::write(tag_dir.join("FETCHED.yaml"), yaml)
+        .unwrap_or_else(|e| panic!("write FETCHED.yaml: {e}"));
+    tag_dir
+}
+
+fn read_trim(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+        .trim()
+        .to_string()
 }
 
 #[test]
@@ -445,4 +502,229 @@ fn fetch_latest_stores_concrete_tag() {
     assert!(!home.join(".cbeta/corpus/CURRENT").exists());
     assert!(!home.join(".cbeta/corpus/latest").exists());
     let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn use_2026r2_scope_ci_minimal_switches_current() {
+    let home = temp_dir("use-home");
+    let index = temp_dir("use-idx");
+    let _tag_dir = plant_complete_2026r2(&home);
+
+    let out = bin_fetched_home(&home, &index)
+        .args(["use", "2026R2", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use 2026R2: {e}"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let current_path = home.join(".cbeta/corpus/CURRENT");
+    assert!(current_path.is_file(), "CURRENT must exist after use");
+    let cur = read_trim(&current_path);
+    assert_eq!(cur, "2026R2");
+    assert!(
+        !cur.contains(".tmp"),
+        "CURRENT must not be a .tmp path: {cur}"
+    );
+    assert!(
+        !current_path.to_string_lossy().contains(".tmp"),
+        "CURRENT path must not be under .tmp"
+    );
+
+    let cur_out = bin_fetched_home(&home, &index)
+        .args(["current"])
+        .output()
+        .unwrap_or_else(|e| panic!("current: {e}"));
+    assert_eq!(
+        cur_out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&cur_out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&cur_out.stdout).trim(), "2026R2");
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&index);
+}
+
+#[test]
+fn use_default_writes_default_and_current() {
+    let home = temp_dir("use-def-home");
+    let index = temp_dir("use-def-idx");
+    let _tag_dir = plant_complete_2026r2(&home);
+
+    let out = bin_fetched_home(&home, &index)
+        .args(["use", "--default", "2026R2", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use --default: {e}"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert_eq!(read_trim(&home.join(".cbeta/corpus/CURRENT")), "2026R2");
+    assert_eq!(read_trim(&home.join(".cbeta/corpus/DEFAULT")), "2026R2");
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&index);
+}
+
+#[test]
+fn use_latest_pins_concrete_2026r2_no_latest_dir() {
+    let home = temp_dir("use-latest-home");
+    let index = temp_dir("use-latest-idx");
+    let tag_dir = plant_complete_2026r2(&home);
+
+    let out = bin_fetched_home(&home, &index)
+        .args(["use", "latest", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use latest: {e}"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert_eq!(read_trim(&home.join(".cbeta/corpus/CURRENT")), "2026R2");
+    assert!(
+        !home.join(".cbeta/corpus/latest").exists(),
+        "use latest must not create a latest/ directory"
+    );
+
+    let fetched = fs::read_to_string(tag_dir.join("FETCHED.yaml"))
+        .unwrap_or_else(|e| panic!("read FETCHED: {e}"));
+    assert!(
+        fetched.contains("cbeta_release: 2026R2"),
+        "FETCHED cbeta_release must stay concrete: {fetched}"
+    );
+    assert!(
+        !fetched.contains("cbeta_release: latest")
+            && !fetched.contains("cbeta_release: \"latest\""),
+        "FETCHED cbeta_release must never be latest: {fetched}"
+    );
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&index);
+}
+
+#[test]
+fn use_incomplete_fetched_exits_2_current_unchanged() {
+    let home = temp_dir("use-inc-home");
+    let index = temp_dir("use-inc-idx");
+    let corpus = home.join(".cbeta/corpus");
+    fs::create_dir_all(&corpus).unwrap_or_else(|e| panic!("mkdir corpus: {e}"));
+    fs::write(corpus.join("CURRENT"), "2025R3\n").unwrap_or_else(|e| panic!("write CURRENT: {e}"));
+
+    let _tag_dir = plant_mini_under_tag(&home, "2026R2");
+
+    let out = bin_fetched_home(&home, &index)
+        .args(["use", "2026R2", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use incomplete: {e}"));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        read_trim(&corpus.join("CURRENT")),
+        "2025R3",
+        "CURRENT must stay previous when FETCHED incomplete"
+    );
+
+    let home2 = temp_dir("use-omit-home");
+    let index2 = temp_dir("use-omit-idx");
+    let corpus2 = home2.join(".cbeta/corpus");
+    fs::create_dir_all(corpus2.join("2026R2")).unwrap_or_else(|e| panic!("mkdir tag: {e}"));
+    fs::write(corpus2.join("CURRENT"), "2025R3\n").unwrap_or_else(|e| panic!("write CURRENT: {e}"));
+
+    let out2 = bin_fetched_home(&home2, &index2)
+        .args(["use", "2026R2", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use no FETCHED: {e}"));
+    assert_eq!(
+        out2.status.code(),
+        Some(2),
+        "stderr={}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+    assert_eq!(read_trim(&corpus2.join("CURRENT")), "2025R3");
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&index);
+    let _ = fs::remove_dir_all(&home2);
+    let _ = fs::remove_dir_all(&index2);
+}
+
+#[test]
+fn use_invalidates_prior_last_json() {
+    let home = temp_dir("use-last-home");
+    let index = temp_dir("use-last-idx");
+    let _tag_dir = plant_complete_2026r2(&home);
+
+    fs::create_dir_all(&index).unwrap_or_else(|e| panic!("mkdir index: {e}"));
+    let last_path = index.join("last.json");
+    fs::write(
+        &last_path,
+        r#"{
+  "query": "真性有为空",
+  "filters": {},
+  "hits": [{
+    "line_id": "T30n1578_p0268b21",
+    "work_id": "T1578",
+    "title": "大乘掌珍論",
+    "author": "玄奘",
+    "juan": 1,
+    "text_raw": "真性有為空",
+    "citation": "(CBETA 2026.R2, T30, no. 1578, p. 268, b21)",
+    "score": 1.0,
+    "cbeta_tag": "2026R2"
+  }],
+  "artifact_id": "2026R2+c1f1x7a0",
+  "cbeta_tag": "2026R2"
+}"#,
+    )
+    .unwrap_or_else(|e| panic!("write last.json: {e}"));
+    assert!(last_path.is_file());
+
+    let out = bin_fetched_home(&home, &index)
+        .args(["use", "2026R2", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("use after last.json: {e}"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !last_path.exists(),
+        "successful use must remove prior last.json"
+    );
+
+    let from = bin_fetched_home(&home, &index)
+        .args(["get", "--from", "last", "--index", "1"])
+        .output()
+        .unwrap_or_else(|e| panic!("get --from last: {e}"));
+    assert_eq!(
+        from.status.code(),
+        Some(2),
+        "stderr={}",
+        String::from_utf8_lossy(&from.stderr)
+    );
+    let err = String::from_utf8_lossy(&from.stderr);
+    assert!(
+        err.contains("no last.json") || err.contains("last.json"),
+        "stderr should mention missing last.json: {err}"
+    );
+
+    let _ = fs::remove_dir_all(&home);
+    let _ = fs::remove_dir_all(&index);
 }

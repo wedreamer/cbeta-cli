@@ -225,3 +225,135 @@ fn cbeta_search_without_query_still_exits_2() {
         "cbeta search without query exit 2; stdout={stdout} stderr={stderr}"
     );
 }
+
+#[test]
+fn repl_verify_original_stays_in_loop_exits_0() {
+    // Given: mini index (T0235+T1578)
+    let (corpus, index) = built();
+
+    // When: search then :verify exact original quote, then :q
+    // SURFACE: 真性有为空\n:verify 真性有為空，如幻緣生故\n:q\n
+    let script = format!("{QUERY}\n:verify 真性有為空，如幻緣生故\n:q\n");
+    let out = run_repl_script(&corpus, &index, &script);
+    let stdout = stdout_utf8(&out);
+    let stderr = stderr_utf8(&out);
+
+    // Then: process exit 0 (stayed in REPL until :q); verify is original-like, not Command dump
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "REPL search+:verify+:q exit 0; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("is_original=true"),
+        ":verify must report is_original=true; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(LINE_ID),
+        ":verify exact hit must include {LINE_ID}; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("\"action\"")
+            && !stdout.contains("parsed_query")
+            && !stdout.contains("\"filters\""),
+        ":verify must not dump Command; got:\n{stdout}"
+    );
+}
+
+#[test]
+fn repl_verify_missing_quote_errors_not_crash() {
+    // Given: mini index (verify path may open index; missing quote fails before that)
+    let (corpus, index) = built();
+
+    // When: bare :verify with no quote, then :q
+    let out = run_repl_script(&corpus, &index, ":verify\n:q\n");
+    let stdout = stdout_utf8(&out);
+    let stderr = stderr_utf8(&out);
+
+    // Then: error on stderr, stay in loop, process exit 0 (not crash / not exit 2)
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "REPL :verify missing quote must not crash; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stderr.contains(":verify requires a quote"),
+        "stderr must say :verify requires a quote; got:\n{stderr}"
+    );
+}
+
+#[test]
+fn repl_help_is_unknown_command_not_help_page() {
+    // Given: bare paths (no index needed for unknown colon)
+    let corpus = mini_corpus();
+    let index = temp_dir("repl-help");
+
+    // When: :help then :q — product has no :help; must not implement a help page
+    let out = run_repl_script(&corpus, &index, ":help\n:q\n");
+    let stdout = stdout_utf8(&out);
+    let stderr = stderr_utf8(&out);
+    let combined = format!("{stdout}\n{stderr}");
+
+    // Then: exit 0; unknown repl command; not clap/Usage help page
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "REPL :help+:q exit 0; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("unknown repl command: :help"),
+        "stderr must be unknown repl command: :help; got:\n{stderr}"
+    );
+    let lower = combined.to_lowercase();
+    assert!(
+        !lower.contains("usage:")
+            && !combined.contains("Commands:")
+            && !combined.contains(":scope")
+            && !combined.contains(":open")
+            && !combined.contains(":copy"),
+        ":help must not print a help page; got:\n{combined}"
+    );
+}
+
+#[test]
+fn repl_query_line_double_dash_json_is_not_cli_flag_parse() {
+    // Given: mini index
+    let (corpus, index) = built();
+
+    // When: query line looks like a CLI flag (`--json 空`) inside REPL
+    let out = run_repl_script(&corpus, &index, "--json 空\n:q\n");
+    let stdout = stdout_utf8(&out);
+    let stderr = stderr_utf8(&out);
+    let combined = format!("{stdout}\n{stderr}");
+
+    // Then: still REPL (exit 0 after :q); not clap global-flag / usage exit 2
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "REPL query line --json 空 must stay in loop; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        !combined.contains("Usage:")
+            && !combined.to_lowercase().contains("unexpected argument")
+            && !combined.contains("error: unexpected"),
+        "query line must not be CLI flag parse; got:\n{combined}"
+    );
+}
+
+#[test]
+fn argv_query_is_search_not_repl() {
+    // Given: mini index
+    let (corpus, index) = built();
+
+    // When: `cbeta 色即是空` (query argv, no subcommand) — Search, not REPL
+    let out = run_args(&corpus, &index, &["色即是空"]);
+    let stdout = stdout_utf8(&out);
+    let stderr = stderr_utf8(&out);
+
+    // Then: exits immediately (0 hit or 1 no-hit); never hangs as REPL
+    let code = out.status.code();
+    assert!(
+        code == Some(0) || code == Some(1),
+        "cbeta 色即是空 must be Search exit 0/1; got {code:?}; stdout={stdout} stderr={stderr}"
+    );
+}

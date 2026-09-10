@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{cbeta_env, mini_corpus, temp_dir};
+use common::{cbeta_env, cbeta_env_with_home, mini_corpus, temp_dir};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -287,5 +287,51 @@ fn from_index_out_of_range_exits_1() {
         out.status.code(),
         Some(1),
         "index 999 out of range exit 1; stdout={stdout} stderr={stderr}"
+    );
+}
+
+#[test]
+fn save_last_writes_index_not_home() {
+    // Given: mini index + fake HOME (proves last.json is NOT under ~/.cbeta)
+    let corpus = mini_corpus();
+    let index = temp_dir("save-index-home");
+    let home = temp_dir("save-fake-home");
+    let build = cbeta_env_with_home(&corpus, &index, &home)
+        .args(["build", "--scope", "ci-minimal"])
+        .output()
+        .unwrap_or_else(|e| panic!("build: {e}"));
+    assert_eq!(
+        build.status.code(),
+        Some(0),
+        "build: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    // When: search --json --save last with CBETA_INDEX set and fake HOME
+    let save = cbeta_env_with_home(&corpus, &index, &home)
+        .args(["search", "--json", "--save", "last", QUERY])
+        .output()
+        .unwrap_or_else(|e| panic!("search --save last: {e}"));
+    let save_stdout = stdout_utf8(&save);
+    let save_stderr = stderr_utf8(&save);
+    assert_eq!(
+        save.status.code(),
+        Some(0),
+        "search --save last exit 0; stdout={save_stdout} stderr={save_stderr}"
+    );
+
+    // Then: $CBETA_INDEX/last.json exists; $HOME/.cbeta/last.json does not
+    let index_last = index.join("last.json");
+    let home_last = home.join(".cbeta").join("last.json");
+    assert!(
+        index_last.is_file(),
+        "last.json must be under CBETA_INDEX {}; stderr={save_stderr}",
+        index_last.display()
+    );
+    assert!(
+        !home_last.exists(),
+        "last.json must NOT be under HOME/.cbeta {}; index has {}",
+        home_last.display(),
+        index_last.display()
     );
 }
