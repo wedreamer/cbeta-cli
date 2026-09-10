@@ -4,7 +4,7 @@ Tracking issue: https://github.com/wedreamer/cbeta-cli/issues/1
 
 Data repo: https://github.com/wedreamer/cbeta-corpus
 
-## P0 — human can search
+## P0 — human can search (LANDED 2026-09)
 
 | ID | Repo | Work | Acceptance |
 |---|---|---|---|
@@ -19,7 +19,7 @@ Data repo: https://github.com/wedreamer/cbeta-corpus
 | L-search | cli | keyword/phrase TTY + --json | exit 0/1/2; highlight; line_id |
 | L-cat | cli | catalog / info / filters | `cbeta catalog --author 玄奘` |
 
-## P1 — proximity + verify + MCP
+## P1 — proximity + verify + MCP (LANDED 2026-09)
 
 | ID | Work | Acceptance |
 |---|---|---|
@@ -30,10 +30,14 @@ Data repo: https://github.com/wedreamer/cbeta-corpus
 | L-in | `--work` / `--script` / `--explain` | 本经内搜 + 简繁显示 |
 | L-mcp | `cbeta serve` stdio | every CLI flag exists on MCP |
 
-## P2 — speed + human loop
+## P2 — speed + human loop (LANDED 2026-09)
 
-HTTP + bench + atomic index swap; REPL; `--save/--from last`; completion.
+HTTP (`serve --http`) + `bench` + atomic index swap (tmp stage + rename); REPL (bare `cbeta`, colon commands); `--save/--from last`; `completion <shell>`.
 
-## P3 — optional
+## P3 — optional (not scheduled)
 
 `semantic_search` as its own tool. Never used for `is_original`.
+
+## Still planned (post-v0.1)
+
+`--window` flag, `--category` filter, pager, JSONL pipe default output, fuzzy engine (1–2 char).

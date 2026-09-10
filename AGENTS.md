@@ -2,9 +2,9 @@
 
 ## OVERVIEW
 
-Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **P0 landed (2026-09):** `build`, keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. **P1 L-get:** `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard). `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). **P1 L-verify landed:** `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`); hash(norm) exact + n-gram/alignment similar; exit 0 even when not original. `--explain --json` still dumps **Command** (parse dump, not hits). `serve` is stdio MCP (five tools); see `cli_mcp`.
+Offline CBETA search CLI (`cbeta`). Humans type the CLI; MCP/HTTP are the same `Command` over another transport. Rust 2021 Cargo workspace. **v0.1.0 = P0 + P1 + P2 landed (2026-09).** P0: `build` (atomic tmp+rename swap), keyword/phrase search (TTY + `--json` Hits), `get` by `line_id`, `catalog` / `info`. P1: `verify` → `VerifyReport` (`is_original` / `exact_hit` / `similar`; hash(norm) exact + n-gram/alignment similar; exit 0 even when not original); `get -C` / `--context`, `read --juan`, `cite`, `--copy` (stdout notes block, no OS clipboard); near/before with char-span confirm; `--explain` / `--script s|t`; stdio MCP (five tools). P2: `serve --http ADDR` (else stdio), bare `cbeta` REPL, `--save last` / `--from last` / `--index N`, `completion <shell>`, `bench --scope`. `get --json -C N` → `{ hit, before, after }`; without `-C` → `{ hit }` only. `Command.context` / `Command.copy` are transport fields (Search ignores `-C`). `--explain --json` dumps **Command/parsed_query** (intentional parse dump, not hits). See `cli_mcp`.
 
-Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` examples are the **product contract**, not current runtime; humans own README recipes, do not rewrite UX examples as if implemented.
+Corpus is **not** this repo: sibling [cbeta-corpus](https://github.com/wedreamer/cbeta-corpus) pins `xml-p5@2026R2`. Do not vendor CBETA XML here. README/`docs/` must match **current runtime**; this v0.1 close-out corrected the stale "not implemented" claims. Humans own README recipes.
 
 ## AGENT LANGUAGE
 
@@ -18,8 +18,8 @@ cbeta-cli/
 ├── Cargo.toml              # workspace; clap pinned =4.5.23
 ├── crates/cbeta-core/      # Command / Hit / VerifyReport / Filters / parse_query
 ├── crates/cbeta-parse/     # TEI P5 + 繁简/异体/缺字/去标点
-├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/
-├── crates/cbeta-search/    # keyword/phrase + verify (near Boolean AND in P0; no span confirm)
+├── crates/cbeta-index/     # Tantivy; default dir ~/.cbeta/index
+├── crates/cbeta-search/    # keyword/phrase + near/before (2-gram recall; span.rs confirm_span; cli_near.rs CLI handler) + verify
 ├── crates/cbeta-cli/       # bin name `cbeta`; clap → Command; tests/ = CLI contracts
 └── docs/                   # search-modes.md, human-ux.md, roadmap.md
 ```
@@ -81,8 +81,8 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 ### Not product yet (do not lock)
 
-- `--explain --json` still dumps Command.
-- NEAR char-span confirm, `--window` remain P1+.
+- `--explain --json` dumps Command/parsed_query (intentional parse dump, not hits).
+- `--window`, pager, JSONL pipe default, `fuzzy` engine, `Command.clauses` type, P3 semantic search remain planned.
 
 ## PARSE SCOPE (do not freeze the old bug)
 
@@ -90,14 +90,16 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 ## CLI SURFACE (today)
 
-- clap subcommands: Search, Verify, Get, Read, Cite, Catalog, Info, Build, Serve.
-- Bare `cbeta 色即是空` is search (no-subcommand → `Action::Search`).
-- `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`.
+- Global flags (clap, `global = true`): `--json` `--mode` `--explain` `--plain` `--canon` `--author` `--type` `--work` `--title` `--script s|t` `--save` `--from` `--index N` `--copy`.
+- clap subcommands: Search, Verify, Get, Read, Cite, Catalog, Info, Build, Bench, Serve, Completion.
+- Bare `cbeta` with no argv opens the **REPL** (`cmd_repl.rs`; colon cmds `:q`/`:quit`, `:scope <work_id>`, `:open N`, `:copy N`, `:verify <quote>`; no `:help`, no flags on a query line). `cbeta 色即是空` (query argv) is search (no-subcommand → `Action::Search`).
+- `get -C` / `--context <N>`: same-work neighbors by sorted `line_id`. Search ignores `-C`. `get` line_id optional with `--from last --index N`.
 - `read <work> --juan <N>` lists lines; `cite <line_id>` prints citation; `--copy` prints notes block to stdout (no xclip/arboard).
-- `--work` / `--author` / `--type` / `--canon` / `--title` filter search and catalog.
+- `--work` / `--author` / `--type` / `--canon` / `--title` filter search and catalog. `--save last` persists hits to `last.json`; `--from last` reloads.
 - `--script s|t`: display-only 简/繁; never mutates `line_id` / index keys.
 - `--mode keyword|phrase` overrides `parsed_query.mode` on Search (unknown value → exit 2).
-- `serve`: stdio MCP only (five tools); logs on stderr; no HTTP.
+- `serve`: stdio MCP (five tools) by default; `serve --http ADDR` runs HTTP. Logs on stderr.
+- `bench --scope <s>` is CLI-only micro-benchmark, not an MCP tool. `completion <shell>` dumps clap_complete scripts.
 - Exits follow rg semantics: **0 hit / 1 no-hit / 2 usage or index**. `verify` exits **0** for both original and not-original (check command); **2** no index. `serve` runs until client disconnect.
 - TTY default human; `--json` never default. `NO_COLOR=1` / non-TTY drop color. Pipe JSONL is planned, not the search `--json` pretty document.
 
@@ -105,8 +107,8 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 
 - Distance = **normalized 汉字**, never tokens. CBReader default window 30 chars; `+` → near/30, `*` → before/30, `NEAR/N`, `?` single-char wildcard.
 - Fullwidth rejection set (verified in `cbeta-core/src/lib.rs`): `— ＋ ＊ ＆ ？`. Fullwidth comma `，` is **not** rejected.
-- Do not treat CBReader `+ * & , - ?` as the agent API. Agents pass structured `clauses` (not yet a type; do not invent one in this PR).
-- Do not implement near as Tantivy `PhraseQuery` slop alone. Recall via 2-gram Boolean AND, confirm char-span on stored `text_norm`.
+- Do not treat CBReader `+ * & , - ?` as the agent API. Agents pass structured `clauses`: MCP `cbeta_search.clauses` (`Vec<String>`) maps to `ParsedQuery` (default near/30, ordered before/30, or keyword/phrase via `mode`). There is still **no `Command.clauses` type / CLI flag**; do not invent one without a plan.
+- Near/before are done: recall via 2-gram Boolean AND, confirm char-span on stored `text_norm` (`span.rs` `confirm_span`). Do not reduce this to Tantivy `PhraseQuery` slop alone.
 
 ## ANTI-PATTERNS
 
@@ -117,7 +119,7 @@ Run the real binary as a 学者 would. Record **command, env, stdout, stderr, ex
 - Do not add MCP-only knobs. Every MCP field has a CLI flag and vice versa.
 - Do not hide pager, highlight, `--copy`, 本经内搜, `build` progress, completion behind MCP.
 
-## PRODUCT SHAPE (target, mostly unimplemented)
+## PRODUCT SHAPE (landed in v0.1.0)
 
 - `line_id`: `T31n1585_p0001a12` (canon+vol `n` work `_p` page col line). Citation: `(CBETA 2026.R2, T30, no. 1578, p. 268, b21)`.
 - Human hit line: rank, line_id, title, 作译者, juan, highlighted snippet.

@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked -p cbeta-cli --target ${{ matrix.target }}
+
+      - name: Package artifact (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="cbeta-${{ matrix.target }}"
+          mkdir -p "${staging}"
+          cp "target/${{ matrix.target }}/release/cbeta" "${staging}/cbeta"
+          cp LICENSE README.md "${staging}/"
+          tar -czf "${staging}.tar.gz" -C "${staging}" cbeta LICENSE README.md
+
+      - name: Package artifact (Windows)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="cbeta-${{ matrix.target }}"
+          mkdir -p "${staging}"
+          cp "target/${{ matrix.target }}/release/cbeta.exe" "${staging}/cbeta.exe"
+          cp LICENSE README.md "${staging}/"
+          (
+            cd "${staging}"
+            7z a -tzip "../${staging}.zip" cbeta.exe LICENSE README.md
+          )
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbeta-${{ matrix.target }}
+          path: cbeta-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum cbeta-*.tar.gz cbeta-*.zip > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          version="${tag#v}"
+          notes_file="$(mktemp)"
+
+          if [[ -f CHANGELOG.md ]]; then
+            awk -v ver="${version}" '
+              BEGIN { p = 0 }
+              $0 ~ "^## \\[" ver "\\]" { p = 1; next }
+              p && $0 ~ /^## \[/ { exit }
+              p { print }
+            ' CHANGELOG.md > "${notes_file}"
+          fi
+
+          if [[ -s "${notes_file}" ]]; then
+            gh release create "${tag}" \
+              --title "cbeta ${tag}" \
+              --notes-file "${notes_file}" \
+              dist/cbeta-*.tar.gz dist/cbeta-*.zip dist/sha256sums.txt
+          else
+            gh release create "${tag}" \
+              --title "cbeta ${tag}" \
+              --generate-notes \
+              dist/cbeta-*.tar.gz dist/cbeta-*.zip dist/sha256sums.txt
+          fi
