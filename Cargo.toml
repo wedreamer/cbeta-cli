@@ -31,6 +31,7 @@ unicode-normalization = "0.1"
 ferrous-opencc = { version = "0.4", default-features = false, features = ["s2t-conversion", "t2s-conversion"] }
 sha2 = "0.10"
 strsim = "0.11"
+serde_yaml = "0.9"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

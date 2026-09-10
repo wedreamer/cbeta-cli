@@ -18,6 +18,8 @@ clap.workspace = true
 clap_complete.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+serde_yaml.workspace = true
+sha2.workspace = true
 # MCP stdio + streamable HTTP (L-mcp / L-http).
 rmcp = { version = "3", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "net", "io-util", "time", "signal"] }
