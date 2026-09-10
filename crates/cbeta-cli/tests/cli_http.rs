@@ -1,7 +1,7 @@
-//! L-http product contracts: `cbeta serve --http` REST `/search` (GitHub #36).
+//! L-http product contracts: `cbeta serve --http` REST `POST /search` only.
 //!
-//! TDD RED until HTTP serve lands — do not implement production code here.
-//! Today `serve` is stdio MCP only; `--http` is unknown → clap exit 2.
+//! Surface: `POST /search` + nest `/mcp` (StreamableHttp — not stdio JSON-RPC).
+//! Non-surface REST (`/verify`, `/get`, GET `/search`) must not be product 200.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -176,8 +176,8 @@ fn parse_listen_port(stderr: &str) -> Option<u16> {
     None
 }
 
-/// Minimal HTTP/1.1 POST; returns (status, body).
-fn http_post_json(port: u16, path: &str, body: &str) -> (u16, String) {
+/// Minimal HTTP/1.1 request; returns (status, body).
+fn http_exchange(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16, String) {
     let addr = format!("127.0.0.1:{port}");
     let mut stream =
         TcpStream::connect_timeout(&addr.parse().expect("socket addr"), Duration::from_secs(2))
@@ -189,10 +189,15 @@ fn http_post_json(port: u16, path: &str, body: &str) -> (u16, String) {
         .set_write_timeout(Some(Duration::from_secs(5)))
         .expect("write timeout");
 
-    let req = format!(
-        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    let req = match body {
+        Some(b) => format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}",
+            b.len()
+        ),
+        None => format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        ),
+    };
     stream
         .write_all(req.as_bytes())
         .unwrap_or_else(|e| panic!("write request: {e}"));
@@ -203,6 +208,16 @@ fn http_post_json(port: u16, path: &str, body: &str) -> (u16, String) {
         .unwrap_or_else(|e| panic!("read response: {e}"));
     let text = String::from_utf8_lossy(&raw);
     parse_http_response(&text)
+}
+
+/// Minimal HTTP/1.1 POST JSON; returns (status, body).
+fn http_post_json(port: u16, path: &str, body: &str) -> (u16, String) {
+    http_exchange(port, "POST", path, Some(body))
+}
+
+/// Minimal HTTP/1.1 GET; returns (status, body).
+fn http_get(port: u16, path: &str) -> (u16, String) {
+    http_exchange(port, "GET", path, None)
 }
 
 fn parse_http_response(raw: &str) -> (u16, String) {
@@ -353,7 +368,7 @@ fn serve_help_documents_http_flag() {
     let stdout = stdout_utf8(&out);
     let stderr = stderr_utf8(&out);
 
-    // Then: documents --http (RED today: flag absent)
+    // Then: documents --http
     assert_eq!(
         out.status.code(),
         Some(0),
@@ -363,6 +378,69 @@ fn serve_help_documents_http_flag() {
         stdout.contains("--http"),
         "serve --help must document --http; got:\n{stdout}"
     );
+}
+
+#[test]
+fn post_search_no_index_binary_is_503() {
+    // Given: mini corpus env but NO build (empty index root)
+    // Momus r2: empty body → Axum 400; 503 needs JSON Content-Type + {"q":…}
+    let corpus = mini_corpus();
+    let index = temp_dir("http-no-index");
+    let mut child = HttpChild::spawn_http(&corpus, &index, "127.0.0.1:0");
+    let port = child.wait_until_listening(READY_TIMEOUT);
+
+    // When: POST /search with valid SearchArgs JSON (binary path; unit is rest.rs)
+    let body = serde_json::to_string(&json!({ "q": QUERY })).expect("serialize");
+    let (status, resp_body) = http_post_json(port, "/search", &body);
+
+    // Then: 503 service unavailable
+    assert_eq!(
+        status, 503,
+        "no-index POST /search must be 503; body={resp_body}"
+    );
+    assert!(
+        resp_body.contains("no index") || resp_body.contains("error"),
+        "503 body should mention no index; got={resp_body}"
+    );
+}
+
+#[test]
+fn non_surface_rest_not_product_200() {
+    // Given: mini index + HTTP serve (surface = POST /search + nest /mcp only)
+    let (corpus, index) = built();
+    let mut child = HttpChild::spawn_http(&corpus, &index, "127.0.0.1:0");
+    let port = child.wait_until_listening(READY_TIMEOUT);
+
+    let q_body = serde_json::to_string(&json!({ "q": QUERY })).expect("serialize");
+
+    // When: POST /verify
+    let (st_verify, body_verify) = http_post_json(port, "/verify", &q_body);
+    // Then: not product 200
+    assert!(
+        st_verify == 404 || st_verify == 405,
+        "POST /verify must not be product 200; got {st_verify}; body={body_verify}"
+    );
+    assert_ne!(st_verify, 200, "POST /verify must not be 200");
+
+    // When: GET /search
+    let (st_get, body_get) = http_get(port, "/search");
+    // Then: not product 200 (POST-only route)
+    assert!(
+        st_get == 404 || st_get == 405,
+        "GET /search must not be product 200; got {st_get}; body={body_get}"
+    );
+    assert_ne!(st_get, 200, "GET /search must not be 200");
+
+    // When: POST /get
+    let get_body =
+        serde_json::to_string(&json!({ "line_id": EXPECT_LINE_ID })).expect("serialize");
+    let (st_post_get, body_post_get) = http_post_json(port, "/get", &get_body);
+    // Then: not product 200
+    assert!(
+        st_post_get == 404 || st_post_get == 405,
+        "POST /get must not be product 200; got {st_post_get}; body={body_post_get}"
+    );
+    assert_ne!(st_post_get, 200, "POST /get must not be 200");
 }
 
 // Keep CARGO_BIN_EXE_cbeta referenced for clarity (cbeta_env uses it).
