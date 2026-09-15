@@ -29,7 +29,7 @@ tantivy = "0.22"
 quick-xml = "0.37"
 unicode-normalization = "0.1"
 ferrous-opencc = { version = "0.4", default-features = false, features = ["s2t-conversion", "t2s-conversion"] }
-sha2 = "0.10"
+sha2 = "0.11"
 strsim = "0.11"
 serde_yaml = "0.9"
 
