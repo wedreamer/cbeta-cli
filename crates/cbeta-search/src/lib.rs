@@ -75,7 +75,7 @@ pub fn search_on(
     } else {
         want
     };
-    let top = searcher.search(&*query, &TopDocs::with_limit(fetch))?;
+    let top = searcher.search(&*query, &TopDocs::with_limit(fetch).order_by_score())?;
     if needs_span_confirm(&parsed.mode) {
         return confirm_hits(&searcher, fields, &top, filters, parsed, &gaiji, want);
     }
@@ -133,7 +133,7 @@ fn get_line_on(
     let searcher = reader.searcher();
     let term = Term::from_field_text(fields.line_id, line_id);
     let q = TermQuery::new(term, IndexRecordOption::Basic);
-    let top = searcher.search(&q, &TopDocs::with_limit(1))?;
+    let top = searcher.search(&q, &TopDocs::with_limit(1).order_by_score())?;
     if top.is_empty() {
         return Ok(None);
     }

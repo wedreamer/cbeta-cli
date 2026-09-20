@@ -202,7 +202,7 @@ mod tests {
         let term = Term::from_field_text(fields.text_norm, "真性有");
         let query = TermQuery::new(term, IndexRecordOption::WithFreqsAndPositions);
         let hits = searcher
-            .search(&query, &TopDocs::with_limit(10))
+            .search(&query, &TopDocs::with_limit(10).order_by_score())
             .expect("search");
         assert!(!hits.is_empty(), "expected hit for 真性有");
 
@@ -230,7 +230,7 @@ mod tests {
         let reader = index.reader().expect("reader");
         let searcher = reader.searcher();
         let hits = searcher
-            .search(&query, &TopDocs::with_limit(5))
+            .search(&query, &TopDocs::with_limit(5).order_by_score())
             .expect("phrase");
         assert_eq!(hits.len(), 1);
 
@@ -303,7 +303,9 @@ mod tests {
         let searcher = reader.searcher();
         let term = Term::from_field_text(fields.line_id, "T31n1585_p0001a12");
         let q = TermQuery::new(term, IndexRecordOption::Basic);
-        let hits = searcher.search(&q, &TopDocs::with_limit(1)).expect("q");
+        let hits = searcher
+            .search(&q, &TopDocs::with_limit(1).order_by_score())
+            .expect("q");
         assert_eq!(hits.len(), 1);
         let doc: TantivyDocument = searcher.doc(hits[0].1).expect("doc");
         let author = doc
