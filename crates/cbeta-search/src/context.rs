@@ -115,7 +115,7 @@ fn list_work_juan_on(
 fn fetch_line(searcher: &Searcher, fields: &LineSchema, line_id: &str) -> Result<Option<Hit>> {
     let term = Term::from_field_text(fields.line_id, line_id);
     let q = TermQuery::new(term, IndexRecordOption::Basic);
-    let top = searcher.search(&q, &TopDocs::with_limit(1))?;
+    let top = searcher.search(&q, &TopDocs::with_limit(1).order_by_score())?;
     if top.is_empty() {
         return Ok(None);
     }
@@ -142,7 +142,10 @@ fn collect_work_lines(
         }
         None => Box::new(work_q),
     };
-    let top = searcher.search(&*query, &TopDocs::with_limit(WORK_LINE_CAP))?;
+    let top = searcher.search(
+        &*query,
+        &TopDocs::with_limit(WORK_LINE_CAP).order_by_score(),
+    )?;
     let mut hits = Vec::with_capacity(top.len());
     for (score, addr) in top {
         let doc: TantivyDocument = searcher.doc(addr)?;

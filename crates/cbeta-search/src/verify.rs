@@ -84,7 +84,7 @@ fn find_exact_by_hash(searcher: &Searcher, fields: &LineSchema, norm: &str) -> R
     let hash = hash_text_norm(norm);
     let term = Term::from_field_text(fields.norm_hash, &hash);
     let query = TermQuery::new(term, IndexRecordOption::Basic);
-    let top = searcher.search(&query, &TopDocs::with_limit(4))?;
+    let top = searcher.search(&query, &TopDocs::with_limit(4).order_by_score())?;
     for (score, addr) in top {
         let doc: TantivyDocument = searcher.doc(addr)?;
         let stored = stored_text_norm(&doc, fields);
@@ -111,7 +111,10 @@ fn find_similar(searcher: &Searcher, fields: &LineSchema, norm: &str) -> Result<
         ));
     }
     let query = BooleanQuery::new(clauses);
-    let top = searcher.search(&query, &TopDocs::with_limit(SIMILAR_RECALL))?;
+    let top = searcher.search(
+        &query,
+        &TopDocs::with_limit(SIMILAR_RECALL).order_by_score(),
+    )?;
 
     let mut best: HashMap<String, Hit> = HashMap::new();
     for (_bm25, addr) in top {
