@@ -2,8 +2,10 @@
 
 use crate::error::{Error, Result};
 use crate::line::ParsedLine;
+use quick_xml::escape::resolve_xml_entity;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
+use quick_xml::XmlVersion;
 
 /// Build `line_id` as `{xml_id}_p{lb_n}`.
 pub fn line_id_from_lb(xml_id: &str, lb_n: &str) -> String {
@@ -59,32 +61,32 @@ pub fn parse_tei_lines(xml: &str) -> Result<Vec<ParsedLine>> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                let name = e.name().as_ref().to_vec();
-                let local = local_name(&name);
-                if local == b"teiHeader" {
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                if local == "teiHeader" {
                     in_header = true;
                     header_depth = 1;
                 } else if in_header {
                     header_depth += 1;
-                } else if local == b"TEI" || local == b"tei" {
-                    if let Some(id) = attr_value(&e, b"id").or_else(|| attr_value(&e, b"xml:id")) {
+                } else if local == "TEI" || local == "tei" {
+                    if let Some(id) = attr_value(&e, "id").or_else(|| attr_value(&e, "xml:id")) {
                         xml_id = id;
                     }
-                } else if local == b"body" {
+                } else if local == "body" {
                     in_body = true;
-                } else if local == b"juan" || local == b"cb:juan" {
-                    if let Some(n) = attr_value(&e, b"n") {
+                } else if local == "juan" || local == "cb:juan" {
+                    if let Some(n) = attr_value(&e, "n") {
                         juan = juan_from_cb_juan(&n).unwrap_or(juan);
                     }
-                } else if local == b"milestone" {
-                    if attr_value(&e, b"unit").as_deref() == Some("juan") {
-                        if let Some(n) = attr_value(&e, b"n") {
+                } else if local == "milestone" {
+                    if attr_value(&e, "unit").as_deref() == Some("juan") {
+                        if let Some(n) = attr_value(&e, "n") {
                             juan = juan_from_cb_juan(&n).unwrap_or(juan);
                         }
                     }
-                } else if local == b"rdg" {
+                } else if local == "rdg" {
                     skip_rdg += 1;
-                } else if local == b"lb" && in_body && !in_header {
+                } else if local == "lb" && in_body && !in_header {
                     flush_line(
                         &mut lines,
                         &xml_id,
@@ -92,30 +94,30 @@ pub fn parse_tei_lines(xml: &str) -> Result<Vec<ParsedLine>> {
                         &mut current_lb,
                         &mut current_text,
                     )?;
-                    current_lb = attr_value(&e, b"n");
+                    current_lb = attr_value(&e, "n");
                     current_text.clear();
                 }
             }
             Ok(Event::Empty(e)) => {
-                let name = e.name().as_ref().to_vec();
-                let local = local_name(&name);
+                let name = e.name();
+                let local = local_name(name.as_ref());
                 if in_header {
                     // ignore empties in header
-                } else if local == b"juan" || local == b"cb:juan" {
-                    if let Some(n) = attr_value(&e, b"n") {
+                } else if local == "juan" || local == "cb:juan" {
+                    if let Some(n) = attr_value(&e, "n") {
                         if let Ok(j) = juan_from_cb_juan(&n) {
                             juan = j;
                         }
                     }
-                } else if local == b"milestone" {
-                    if attr_value(&e, b"unit").as_deref() == Some("juan") {
-                        if let Some(n) = attr_value(&e, b"n") {
+                } else if local == "milestone" {
+                    if attr_value(&e, "unit").as_deref() == Some("juan") {
+                        if let Some(n) = attr_value(&e, "n") {
                             if let Ok(j) = juan_from_cb_juan(&n) {
                                 juan = j;
                             }
                         }
                     }
-                } else if local == b"lb" && in_body {
+                } else if local == "lb" && in_body {
                     flush_line(
                         &mut lines,
                         &xml_id,
@@ -123,22 +125,22 @@ pub fn parse_tei_lines(xml: &str) -> Result<Vec<ParsedLine>> {
                         &mut current_lb,
                         &mut current_text,
                     )?;
-                    current_lb = attr_value(&e, b"n");
+                    current_lb = attr_value(&e, "n");
                     current_text.clear();
                 }
             }
             Ok(Event::End(e)) => {
-                let name = e.name().as_ref().to_vec();
-                let local = local_name(&name);
+                let name = e.name();
+                let local = local_name(name.as_ref());
                 if in_header {
                     header_depth -= 1;
                     if header_depth <= 0 {
                         in_header = false;
                         header_depth = 0;
                     }
-                } else if local == b"rdg" {
+                } else if local == "rdg" {
                     skip_rdg = skip_rdg.saturating_sub(1);
-                } else if local == b"body" {
+                } else if local == "body" {
                     flush_line(
                         &mut lines,
                         &xml_id,
@@ -153,14 +155,32 @@ pub fn parse_tei_lines(xml: &str) -> Result<Vec<ParsedLine>> {
                 if in_header || skip_rdg > 0 || !in_body || current_lb.is_none() {
                     // skip
                 } else {
-                    let text = t.unescape().map_err(|e| Error::Xml(e.to_string()))?;
+                    // quick-xml 0.42: Text is raw (entities arrive as GeneralRef, not decoded
+                    // here). xml_content only normalizes EOLs; it does NOT resolve entities.
+                    let text = t.xml_content(XmlVersion::Implicit1_0);
                     current_text.push_str(&text);
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if !in_header && skip_rdg == 0 && in_body && current_lb.is_some() {
+                    if let Some(c) = e
+                        .resolve_char_ref()
+                        .map_err(|err| Error::Xml(err.to_string()))?
+                    {
+                        current_text.push(c);
+                    } else if let Some(s) = resolve_xml_entity(&e) {
+                        current_text.push_str(s);
+                    } else {
+                        // quick-xml 0.42 emits GeneralRef for every `&…;` and only expands
+                        // char refs; named entities are the parser's job. An unrecognized name
+                        // is malformed XML that 0.37's unescape() rejected — preserve that.
+                        return Err(Error::Xml(format!("unrecognized entity: &{};", e.as_ref())));
+                    }
                 }
             }
             Ok(Event::CData(t)) => {
                 if !in_header && skip_rdg == 0 && in_body && current_lb.is_some() {
-                    let text = String::from_utf8_lossy(t.as_ref());
-                    current_text.push_str(&text);
+                    current_text.push_str(t.as_ref());
                 }
             }
             Ok(Event::Eof) => {
@@ -209,20 +229,23 @@ fn flush_line(
     Ok(())
 }
 
-fn local_name(qname: &[u8]) -> &[u8] {
-    match qname.iter().rposition(|&b| b == b':') {
+fn local_name(qname: &str) -> &str {
+    match qname.rfind(':') {
         Some(i) => &qname[i + 1..],
         None => qname,
     }
 }
 
-fn attr_value(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
+fn attr_value(e: &quick_xml::events::BytesStart<'_>, key: &str) -> Option<String> {
     for attr in e.attributes().flatten() {
-        let key_bytes = attr.key.as_ref();
-        let local = local_name(key_bytes);
-        let matched = key_bytes == key || local == key || (key == b"id" && local == b"id");
+        let key_str = attr.key.as_ref();
+        let local = local_name(key_str);
+        let matched = key_str == key || local == key || (key == "id" && local == "id");
         if matched {
-            let v = attr.unescape_value().ok()?.into_owned();
+            let v = attr
+                .normalized_value(XmlVersion::Implicit1_0)
+                .ok()?
+                .into_owned();
             return Some(v);
         }
     }
@@ -371,5 +394,26 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].juan, 3);
         assert_eq!(lines[0].work_id, "T0235");
+    }
+
+    #[test]
+    fn predefined_and_numeric_entities_are_decoded_in_text() {
+        let xml = r#"<?xml version="1.0"?>
+<TEI id="T01n0001"><teiHeader/><text><body>
+<lb n="0001a01"/>A&amp;B&lt;C&#65;D&quot;E
+</body></text></TEI>"#;
+        let lines = parse_tei_lines(xml).unwrap();
+        assert_eq!(lines.len(), 1);
+        // Regression: quick-xml 0.42 delivers named entities as GeneralRef; 2026R2 has 70 `&amp;` + 3 `&lt;`.
+        assert_eq!(lines[0].text_raw, "A&B<CAD\"E");
+    }
+
+    #[test]
+    fn unknown_named_entity_is_rejected() {
+        let xml = r#"<?xml version="1.0"?>
+<TEI id="T01n0001"><teiHeader/><text><body>
+<lb n="0001a01"/>a&bogus;b
+</body></text></TEI>"#;
+        assert!(parse_tei_lines(xml).is_err());
     }
 }
