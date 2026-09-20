@@ -6,9 +6,13 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cbeta_core::{Filters, Hit, IndexInfo};
 use serde::{Deserialize, Serialize};
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// On-disk shape of `last.json` written by `search --save last`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,7 +63,10 @@ pub fn last_json_path() -> Result<PathBuf, String> {
     }
 }
 
-/// Atomically write `session` to [`last_json_path`] (`{path}.tmp` then rename).
+/// Atomically write `session` to [`last_json_path`] (unique sibling temp file then rename).
+///
+/// WHY: concurrent `save_last` calls (e.g. parallel searches with `--save last`) must not
+/// collide on a fixed `.tmp` path, causing ENOENT when one renames before the other.
 ///
 /// # Errors
 /// Returns an I/O or serialization error message when the write fails.
@@ -68,13 +75,24 @@ pub fn save_last(session: &SavedSearch) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create last.json parent: {e}"))?;
     }
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut tmp_os = path.as_os_str().to_os_string();
-    tmp_os.push(".tmp");
+    tmp_os.push(format!(".{pid}.{nanos}.{seq}.tmp"));
     let tmp = PathBuf::from(tmp_os);
     let body =
         serde_json::to_string_pretty(session).map_err(|e| format!("serialize last.json: {e}"))?;
-    fs::write(&tmp, body).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename to {}: {e}", path.display()))?;
+    if let Err(e) = fs::write(&tmp, body) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("write {}: {e}", tmp.display()));
+    }
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("rename to {}: {e}", path.display()));
+    }
     Ok(())
 }
 
@@ -250,6 +268,48 @@ mod tests {
         std::env::set_var("CBETA_INDEX", &dir);
         let err = load_last().unwrap_err();
         assert!(err.contains("parse") || err.contains("last.json"));
+        std::env::remove_var("CBETA_INDEX");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_last_concurrent_writers_no_enoent_and_valid_json() {
+        let _g = env_lock();
+        let dir = std::env::temp_dir().join(format!(
+            "cbeta-session-conc-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CBETA_INDEX", &dir);
+
+        let threads = 8;
+        let iters = 20;
+        let mut handles = Vec::with_capacity(threads);
+        for t in 0..threads {
+            handles.push(std::thread::spawn(move || {
+                for i in 0..iters {
+                    let mut s = sample_session();
+                    s.query = format!("query-{t}-{i}");
+                    save_last(&s)
+                        .unwrap_or_else(|e| panic!("worker {t}-{i} save_last failed: {e}"));
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join()
+                .unwrap_or_else(|_| panic!("save_last worker panicked"));
+        }
+
+        let loaded = load_last().unwrap();
+        assert!(loaded.query.starts_with("query-"));
+        assert_eq!(loaded.hits.len(), 1);
+
         std::env::remove_var("CBETA_INDEX");
         let _ = fs::remove_dir_all(&dir);
     }
